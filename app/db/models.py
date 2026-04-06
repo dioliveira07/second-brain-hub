@@ -1,0 +1,74 @@
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    github_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    github_login: Mapped[str] = mapped_column(String(255), nullable=False)
+    access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    repos_allowed: Mapped[dict] = mapped_column(JSONB, default=list)
+    proactivity_level: Mapped[str] = mapped_column(String(20), default="advisor")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class IndexedRepo(Base):
+    __tablename__ = "indexed_repos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    github_full_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    indexing_status: Mapped[str] = mapped_column(String(20), default="pending")
+    config: Mapped[dict] = mapped_column(JSONB, default=dict)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detected_stack: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    directory_map: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    decisions: Mapped[list["ArchitecturalDecision"]] = relationship(back_populates="repo")
+    logs: Mapped[list["IndexingLog"]] = relationship(back_populates="repo")
+
+
+class ArchitecturalDecision(Base):
+    __tablename__ = "architectural_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"))
+    pr_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    pr_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pr_author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    impact_areas: Mapped[dict] = mapped_column(JSONB, default=list)
+    breaking_changes: Mapped[bool] = mapped_column(Boolean, default=False)
+    qdrant_point_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    repo: Mapped["IndexedRepo"] = relationship(back_populates="decisions")
+
+
+class IndexingLog(Base):
+    __tablename__ = "indexing_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"))
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)
+    files_processed: Mapped[int] = mapped_column(Integer, default=0)
+    chunks_created: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    repo: Mapped["IndexedRepo"] = relationship(back_populates="logs")

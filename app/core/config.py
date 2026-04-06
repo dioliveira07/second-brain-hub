@@ -1,0 +1,35 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # Hub
+    hub_env: str = "development"
+    secret_key: str = "change-me-in-production"
+
+    # PostgreSQL
+    database_url: str = "postgresql+asyncpg://sbuser:sbpass@postgres:5432/secondbrain"
+
+    # Qdrant
+    qdrant_host: str = "qdrant"
+    qdrant_port: int = 6333
+
+    # Redis
+    redis_url: str = "redis://redis:6379/0"
+
+    # GitHub
+    github_app_client_id: str = ""
+    github_app_client_secret: str = ""
+    github_webhook_secret: str = ""
+    github_pat: str = ""
+
+    # Claude API
+    anthropic_api_key: str = ""
+
+    # Embedding
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dimensions: int = 384
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
+settings = Settings()
