@@ -203,6 +203,51 @@ Com essa indexação, quando um dev perguntar *"quero criar um novo serviço seg
 
 ---
 
+### Fase 7 — Dashboard Web (Semana 13-15)
+**Objetivo:** Interface visual para explorar o conhecimento da empresa com grafo interativo, métricas e busca.
+
+**Stack do frontend:** Next.js + shadcn/ui + Tailwind + react-force-graph-3d + Recharts
+
+#### 7A — Grafo de Conhecimento Interativo
+- [ ] Grafo 3D/2D (toggle) com nós e arestas:
+  - **Nós**: repos (cor por stack), devs (cor por equipe), tecnologias, decisões
+  - **Arestas**: dependências entre repos, autoria, relações semânticas
+  - Tamanho do nó proporcional à atividade (commits, PRs, chunks indexados)
+- [ ] Click no nó abre painel lateral com:
+  - Repo: summary, stack, key_files, decisões recentes, top contributors
+  - Dev: repos que contribui, expertise (tópicos), learnings submetidos
+  - Tecnologia: quais repos usam, versões, decisões relacionadas
+- [ ] Filtros: por stack, por equipe, por período, por tipo de nó
+- [ ] Busca semântica integrada no grafo — resultado destaca nós relevantes
+
+#### 7B — Dashboard de Métricas
+- [ ] Cards de status: repos indexados, chunks total, decisões capturadas, learnings no playbook
+- [ ] **Heatmap de atividade**: PRs mergeados por repo por semana (estilo GitHub contributions)
+- [ ] **Timeline de decisões**: scroll horizontal com PRs mergeados, color-coded por impacto
+- [ ] **Top repos** por atividade, bugs reportados, decisões arquiteturais
+- [ ] **Top contributors** no playbook — quem mais contribui com learnings
+
+#### 7C — Playbook Visual
+- [ ] Lista navegável de learnings com filtros (tipo, repo, autor, data)
+- [ ] Busca semântica no playbook
+- [ ] Detalhe de cada learning com contexto (repo, PR, autor, data)
+- [ ] Export para Markdown/PDF
+
+#### 7D — Endpoints de suporte (Hub API)
+- [ ] `GET /api/v1/graph/nodes` — retorna nós (repos, devs, tecnologias) com metadata
+- [ ] `GET /api/v1/graph/edges` — retorna arestas (dependências, autoria, relações)
+- [ ] `GET /api/v1/stats/overview` — cards de status agregados
+- [ ] `GET /api/v1/stats/activity` — heatmap data (PRs por repo por semana)
+- [ ] `GET /api/v1/stats/timeline` — decisões ordenadas por data
+
+#### Autenticação
+- Mesmo GitHub OAuth do Hub — dev faz login e vê só o que tem permissão
+- Rota admin para o gerente ver métricas de todos os repos/devs
+
+**Stack:** Next.js 14+, shadcn/ui, Tailwind CSS, react-force-graph-3d, Recharts, next-auth (GitHub provider)
+
+---
+
 ## Modelo de Dados
 
 ### PostgreSQL
