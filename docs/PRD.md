@@ -4,6 +4,8 @@
 
 Sistema multiusuário centralizado que indexa, retém e disponibiliza o conhecimento técnico da empresa a partir dos repositórios GitHub, acessível por qualquer desenvolvedor via Claude Code em seus terminais.
 
+**O Hub não utiliza API da Anthropic/Claude.** Toda inteligência (resumos, interpretação, geração de código) acontece no Claude Code do dev, na ponta. O Hub é exclusivamente um banco de contexto: armazena dados brutos estruturados e os serve via API REST.
+
 ## Arquitetura Macro
 
 ```
@@ -80,15 +82,15 @@ O indexador não lê arquivos cegamente. Ele primeiro **entende o que o repo é*
   | Configs (`docker-compose`, CI/CD, `.env.example`) | Como faz deploy, variáveis necessárias |
   | Migrations | Evolução do schema de banco |
   | Tests (estrutura, não conteúdo) | O que é testado, padrões de teste |
-- [ ] **Geração de resumo arquitetural via Claude API**: para cada repo, o analyzer envia os arquivos-chave e pede um resumo estruturado:
+- [ ] **Geração de resumo arquitetural (sem IA)**: para cada repo, o analyzer gera um resumo estruturado baseado nos dados coletados (stack detectada + key_files + estrutura de diretórios). Formato template preenchido automaticamente:
   ```
   - Stack: FastAPI 0.104, PostgreSQL 16, Redis 7
-  - Padrão: Clean Architecture com camadas service/repository
-  - Autenticação: JWT via middleware customizado
-  - Deploy: Docker Compose, CI via GitHub Actions
-  - Pontos de entrada: POST /api/users, GET /api/products...
+  - Estrutura: src/auth/, src/models/, src/routes/
+  - Entrypoints: main.py, app/main.py
+  - Configs: Dockerfile, docker-compose.yml, .env.example
+  - CI/CD: .github/workflows/deploy.yml
   ```
-  Este resumo é vetorizado E salvo como documento legível no PostgreSQL.
+  Este resumo é vetorizado E salvo como documento legível no PostgreSQL. O Claude Code do dev interpreta e enriquece esse resumo on-demand quando consultar.
 
 #### 1C — Pipeline de Indexação Inteligente (Semana 3)
 - [ ] **Chunking context-aware**: não corta por tamanho fixo. Respeita limites semânticos:
@@ -122,7 +124,7 @@ Com essa indexação, quando um dev perguntar *"quero criar um novo serviço seg
 - Código real dos entrypoints, rotas e models (não o que alguém escreveu num README)
 - Configs de deploy reais (Dockerfile, CI/CD) para copiar como base
 
-**Stack desta fase:** FastAPI, Qdrant, FastEmbed, Claude API (Haiku para resumos), pygit2, Docker Compose
+**Stack desta fase:** FastAPI, Qdrant, FastEmbed, pygit2, Docker Compose
 
 ---
 
@@ -163,9 +165,8 @@ Com essa indexação, quando um dev perguntar *"quero criar um novo serviço seg
 - [ ] Pipeline de reflection por PR:
   1. Extrai diff do PR via GitHub API
   2. Extrai título, descrição, review comments
-  3. Gera resumo via Claude API: decisões arquiteturais, breaking changes, padrões novos
-  4. Armazena resumo como documento no Qdrant (tipo: `architectural_decision`)
-  5. Persiste no PostgreSQL para audit trail
+  3. Armazena dados brutos (diff + título + descrição + comments) como documento no Qdrant (tipo: `architectural_decision`). **Sem gerar resumo via IA** — o Claude Code do dev interpreta quando consultar.
+  4. Persiste no PostgreSQL para audit trail
 - [ ] Endpoint `GET /api/v1/repos/{repo}/decisions` — lista decisões arquiteturais extraídas
 - [ ] Re-indexação incremental dos arquivos alterados no PR (atualiza chunks antigos)
 - [ ] Signature verification (GitHub webhook secret) para segurança
@@ -299,7 +300,8 @@ Collection: architectural_decisions
 | Disponibilidade | 99% (single node ok para MVP) |
 | Segurança | JWT + GitHub OAuth, zero trust per-repo |
 | Embedding model | Local (FastEmbed), sem chamada externa |
-| Custo de reflection | ~$0.02/PR (1 chamada Claude Haiku por PR) |
+| API de IA externa | Nenhuma — Hub processa tudo localmente |
+| Custo de reflection | $0 (dados brutos, sem chamada de IA) |
 
 ---
 
@@ -311,4 +313,4 @@ Collection: architectural_decisions
 | Token GitHub expira | Refresh automático via Celery + fallback para re-auth |
 | Chunks mal cortados perdem contexto | Usar chunking com overlap (200 tokens overlap) + respeitar limites de seção Markdown |
 | Qdrant single point of failure | MVP aceita risco; Fase futura: snapshot + restore automático |
-| Custo de Claude API no Reflection | Usar Claude Haiku para resumos de PR (custo mínimo) |
+| Dados brutos de PR muito grandes | Limitar diff a ~50KB por PR; truncar se necessário |
