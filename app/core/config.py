@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dimensions: int = 384
 
+    hub_base_url: str = "http://localhost:8010"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
