@@ -77,6 +77,22 @@ services:
       timeout: 5s
       retries: 3
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "3010:3000"
+    depends_on:
+      - hub-api
+    environment:
+      HUB_API_URL: http://hub-api:8000
+      NEXTAUTH_URL: http://localhost:3010
+      NEXTAUTH_SECRET: second-brain-hub-secret-2026
+      GITHUB_ID: Iv23liL0R2Y8R7pXIoVb
+      GITHUB_SECRET: 338ec0eb48f63401484481f4e177c4c60126c81e
+    restart: unless-stopped
+
 volumes:
   qdrant-data:
   postgres-data:
