@@ -35,6 +35,73 @@ def clone_repo(full_name: str, target_dir: str, token: str) -> str:
     return str(repo_path)
 
 
-# TODO: Fase 3 — Implementar get_user_repos(access_token: str) -> list[str]
-# TODO: Fase 4 — Implementar get_pr_diff(full_name: str, pr_number: int) -> str
-# TODO: Fase 4 — Implementar verify_webhook_signature(payload, signature, secret)
+import hashlib
+import hmac
+import json
+
+
+async def get_pr_diff(full_name: str, pr_number: int, token: str) -> str:
+    """Fetch PR diff from GitHub API. Truncate to 50KB."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{full_name}/pulls/{pr_number}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.diff"},
+        )
+        if resp.status_code != 200:
+            return ""
+        diff = resp.text
+        return diff[:50_000] if len(diff) > 50_000 else diff
+
+
+async def get_pr_details(full_name: str, pr_number: int, token: str) -> dict:
+    """Fetch PR title, body, author, and review comments."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        # PR info
+        resp = await client.get(
+            f"https://api.github.com/repos/{full_name}/pulls/{pr_number}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        )
+        pr = resp.json() if resp.status_code == 200 else {}
+
+        # Review comments
+        resp2 = await client.get(
+            f"https://api.github.com/repos/{full_name}/pulls/{pr_number}/comments",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        )
+        comments = resp2.json() if resp2.status_code == 200 else []
+
+        return {
+            "title": pr.get("title", ""),
+            "body": pr.get("body", "") or "",
+            "author": pr.get("user", {}).get("login", ""),
+            "merged_at": pr.get("merged_at"),
+            "changed_files": [f["filename"] for f in pr.get("files", [])],
+            "comments": [{"user": c.get("user", {}).get("login"), "body": c.get("body", "")} for c in comments[:20]],
+        }
+
+
+async def get_pr_files(full_name: str, pr_number: int, token: str) -> list[str]:
+    """Return list of filenames changed in the PR."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{full_name}/pulls/{pr_number}/files",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+            params={"per_page": 100},
+        )
+        if resp.status_code != 200:
+            return []
+        return [f["filename"] for f in resp.json()]
+
+
+def verify_webhook_signature(payload_bytes: bytes, signature_header: str, secret: str) -> bool:
+    """Verify GitHub webhook HMAC signature."""
+    if not secret:
+        return True  # if no secret configured, allow all
+    if not signature_header:
+        return False
+    mac = hmac.new(secret.encode(), payload_bytes, hashlib.sha256)
+    expected = "sha256=" + mac.hexdigest()
+    return hmac.compare_digest(expected, signature_header)
