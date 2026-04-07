@@ -26,12 +26,22 @@ async def github_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
+    full_name = payload.get("repository", {}).get("full_name", "")
+
+    if event == "push":
+        # Re-indexa o repo a cada push na branch default
+        ref = payload.get("ref", "")
+        default_branch = payload.get("repository", {}).get("default_branch", "main")
+        if ref == f"refs/heads/{default_branch}" and full_name:
+            from app.worker import index_repo_task
+            index_repo_task.delay(full_name)
+            return {"status": "queued", "repo": full_name, "event": "push"}
+
     if event == "pull_request":
         action = payload.get("action")
         pr = payload.get("pull_request", {})
 
         if action == "closed" and pr.get("merged"):
-            full_name = payload.get("repository", {}).get("full_name", "")
             pr_number = pr.get("number")
             merged_at = pr.get("merged_at")
 

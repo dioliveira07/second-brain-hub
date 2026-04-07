@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file: .env
     ports:
       - "8010:8000"
     depends_on:
@@ -22,27 +23,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file: .env
     depends_on:
       - redis
       - postgres
       - qdrant
     volumes:
       - git-mirrors:/data/repos
-    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
 
   celery-beat:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file: .env
     depends_on:
       - redis
     command: celery -A app.worker.celery_app beat --loglevel=info
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
-    ports:
-      - "6335:6333"
-      - "6336:6334"
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
@@ -53,8 +53,6 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    ports:
-      - "5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-secondbrain}
       POSTGRES_USER: ${POSTGRES_USER:-sbuser}
@@ -69,8 +67,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -87,10 +83,11 @@ services:
       - hub-api
     environment:
       HUB_API_URL: http://hub-api:8000
-      NEXTAUTH_URL: http://localhost:3010/painel
-      NEXTAUTH_SECRET: second-brain-hub-secret-2026
-      GITHUB_ID: Iv23liL0R2Y8R7pXIoVb
-      GITHUB_SECRET: 338ec0eb48f63401484481f4e177c4c60126c81e
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3010/painel}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me}
+      GITHUB_ID: ${GITHUB_APP_CLIENT_ID}
+      GITHUB_SECRET: ${GITHUB_APP_CLIENT_SECRET}
+    env_file: .env
     restart: unless-stopped
 
 volumes:

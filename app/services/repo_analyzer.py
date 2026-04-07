@@ -376,11 +376,11 @@ def identify_key_files(repo_path: str, stack: dict) -> list[dict]:
     # Sort by priority
     results.sort(key=lambda x: (x["_sort"], x["path"]))
 
-    # Remove internal sort key and limit to 50
+    # Remove internal sort key and limit to 1000
     for r in results:
         r.pop("_sort", None)
 
-    return results[:50]
+    return results[:1000]
 
 
 def generate_summary(repo_path: str, stack: dict, key_files: list[dict]) -> str:
