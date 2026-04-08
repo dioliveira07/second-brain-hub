@@ -22,11 +22,11 @@ const C = {
   cyan:       "#06b6d4",
   green:      "#22c55e",
   text:       "#e2e8f0",
-  inactive:   "#7a9ab8",
+  inactive:   "#8ab4cc",
   activeBg:   "rgba(6,182,212,0.08)",
   hoverBg:    "rgba(6,182,212,0.04)",
-  dim:        "#334a62",
-  footer:     "#4a6888",
+  dim:        "#5a7a9a",
+  footer:     "#6a8aaa",
 };
 
 export function Sidebar() {
@@ -65,9 +65,9 @@ export function Sidebar() {
         <div
           style={{
             fontFamily:    "'Fira Code', monospace",
-            fontSize:      "0.68rem",
+            fontSize:      "0.76rem",
             fontWeight:    700,
-            letterSpacing: "0.16em",
+            letterSpacing: "0.12em",
             textTransform: "uppercase",
             color:         C.cyan,
             textShadow:    "0 0 16px rgba(6,182,212,.55)",
@@ -79,7 +79,7 @@ export function Sidebar() {
         <div
           style={{
             fontFamily:    "'Fira Code', monospace",
-            fontSize:      "0.56rem",
+            fontSize:      "0.72rem",
             color:         C.footer,
             letterSpacing: "0.12em",
           }}
@@ -175,11 +175,11 @@ export function Sidebar() {
               flexShrink:   0,
             }}
           />
-          <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.58rem", color: C.green, letterSpacing: "0.1em" }}>
+          <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: C.green, letterSpacing: "0.1em" }}>
             SYSTEM ONLINE
           </span>
         </div>
-        <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.54rem", color: C.dim, letterSpacing: "0.08em" }}>
+        <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: C.dim, letterSpacing: "0.08em" }}>
           FASE 7 — PROD
         </span>
       </div>

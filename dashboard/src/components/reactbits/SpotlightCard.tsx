@@ -35,7 +35,7 @@ export function SpotlightCard({
     const el = cardRef.current;
     if (!el) return;
     el.style.setProperty("--spot-opacity", "0");
-    el.style.borderColor = "";
+    el.style.borderColor = "var(--border)";
   };
 
   return (

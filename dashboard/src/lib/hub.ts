@@ -1,12 +1,12 @@
 const HUB_URL = process.env.HUB_API_URL || "http://host.docker.internal:8010";
 
-// revalidate: 30s para dados que mudam raramente (repos, stats, grafo)
-// no-store: apenas para dados em tempo real (notificações, search)
+// no-store por padrão — router.refresh() busca dados frescos em tempo real
+// passar revalidate: 60 apenas para dados caros (grafo)
 export async function hubFetch<T>(
   path: string,
   options?: RequestInit & { revalidate?: number | false },
 ): Promise<T> {
-  const { revalidate = 30, ...fetchOptions } = options ?? {};
+  const { revalidate = false, ...fetchOptions } = options ?? {};
 
   const res = await fetch(`${HUB_URL}/api/v1${path}`, {
     ...fetchOptions,

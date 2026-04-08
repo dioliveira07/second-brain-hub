@@ -8,8 +8,8 @@ export default async function GraphPage() {
 
   try {
     const [nodesRes, edgesRes] = await Promise.all([
-      hubFetch<{ nodes: APIGraphNode[]; total: number }>("/graph/nodes"),
-      hubFetch<{ edges: APIGraphEdge[]; total: number }>("/graph/edges"),
+      hubFetch<{ nodes: APIGraphNode[]; total: number }>("/graph/nodes", { revalidate: 60 }),
+      hubFetch<{ edges: APIGraphEdge[]; total: number }>("/graph/edges", { revalidate: 60 }),
     ]);
     nodes = nodesRes.nodes;
     edges = edgesRes.edges;
@@ -56,7 +56,7 @@ export default async function GraphPage() {
                 >
                   Grafo de Dependências
                 </h2>
-                <p style={{ fontFamily: "var(--sans)", fontSize: "0.82rem", color: "var(--muted)" }}>
+                <p style={{ fontFamily: "var(--sans)", fontSize: "0.82rem", color: "var(--muted-foreground)" }}>
                   Hover para revelar nomes · Clique para detalhes · Arraste para reorganizar
                 </p>
               </div>

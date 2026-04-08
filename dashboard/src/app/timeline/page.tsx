@@ -18,7 +18,7 @@ export default async function TimelinePage() {
         <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.6rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", marginBottom: "0.35rem" }}>
           Timeline
         </h2>
-        <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted)" }}>
+        <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
           Decisões capturadas via merge de PRs
         </p>
       </div>
@@ -33,10 +33,10 @@ export default async function TimelinePage() {
           }}
         >
           <GitPullRequest size={36} color="var(--dim)" />
-          <p style={{ fontFamily: "var(--mono)", fontSize: "0.85rem", color: "var(--muted)" }}>
+          <p style={{ fontFamily: "var(--mono)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
             Nenhuma decisão registrada ainda.
           </p>
-          <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--dim)" }}>
+          <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)" }}>
             Configure webhooks de PR no GitHub para capturar decisões.
           </p>
         </div>
@@ -79,7 +79,7 @@ export default async function TimelinePage() {
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "0.75rem" }}>
                   <div style={{ minWidth: 0 }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--cyan)", display: "block", marginBottom: "0.35rem", letterSpacing: "0.06em" }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--cyan)", display: "block", marginBottom: "0.35rem", letterSpacing: "0.06em" }}>
                       {d.repo}
                     </span>
                     <h4 style={{ fontFamily: "var(--sans)", fontSize: "0.95rem", fontWeight: 500, color: "var(--text)", lineHeight: 1.4 }}>
@@ -98,7 +98,7 @@ export default async function TimelinePage() {
                       }}
                     >
                       <AlertTriangle size={10} color="var(--red)" />
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "0.58rem", color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                         Breaking
                       </span>
                     </div>
@@ -107,13 +107,13 @@ export default async function TimelinePage() {
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                    <User size={11} color="var(--muted)" />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "var(--muted)" }}>{d.pr_author}</span>
+                    <User size={11} color="var(--muted-foreground)" />
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "var(--muted-foreground)" }}>{d.pr_author}</span>
                   </div>
                   {d.merged_at && (
                     <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                       <Calendar size={11} color="var(--dim)" />
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "var(--muted)" }}>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "var(--muted-foreground)" }}>
                         {new Date(d.merged_at).toLocaleDateString("pt-BR")}
                       </span>
                     </div>
@@ -122,7 +122,7 @@ export default async function TimelinePage() {
                     <span
                       key={a}
                       style={{
-                        fontFamily: "var(--mono)", fontSize: "0.62rem",
+                        fontFamily: "var(--mono)", fontSize: "0.72rem",
                         color: "var(--purple)",
                         background: "rgba(167,139,250,.08)",
                         border: "1px solid rgba(167,139,250,.2)",
