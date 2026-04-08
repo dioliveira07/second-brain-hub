@@ -3,7 +3,7 @@ from qdrant_client.models import Distance, VectorParams
 
 from app.core.config import settings
 
-client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, timeout=60)
 
 COLLECTIONS = {
     "company_knowledge": {

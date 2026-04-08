@@ -20,19 +20,23 @@ def clone_repo(full_name: str, target_dir: str, token: str) -> str:
 
     if repo_path.exists():
         subprocess.run(
-            ["git", "-C", str(repo_path), "pull"],
-            check=True,
-            capture_output=True,
+            ["git", "-C", str(repo_path), "pull", "--depth=1"],
+            check=True, capture_output=True,
         )
     else:
         repo_path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
-            ["git", "clone", url, str(repo_path)],
-            check=True,
-            capture_output=True,
+            ["git", "clone", "--depth=1", url, str(repo_path)],
+            check=True, capture_output=True,
         )
 
     return str(repo_path)
+
+
+async def clone_repo_async(full_name: str, target_dir: str, token: str) -> str:
+    """Versão async-safe: roda o clone em thread para não bloquear o event loop."""
+    import asyncio
+    return await asyncio.to_thread(clone_repo, full_name, target_dir, token)
 
 
 import hashlib

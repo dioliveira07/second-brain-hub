@@ -2,16 +2,25 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timezone, timedelta
+import time
 from app.db.session import get_db
 from app.db.models import IndexedRepo, ArchitecturalDecision, IndexingLog, Notification
 from app.services.qdrant import client as qdrant_client
 
 router = APIRouter()
 
+# Cache simples em memória — evita múltiplas queries pesadas em burst
+_overview_cache: dict = {"data": None, "ts": 0.0}
+_OVERVIEW_TTL = 20  # segundos
+
 
 @router.get("/overview")
 async def get_stats_overview(db: AsyncSession = Depends(get_db)):
-    """Cards de status agregados."""
+    """Cards de status agregados — com cache de 20s para evitar burst."""
+    now = time.monotonic()
+    if _overview_cache["data"] and now - _overview_cache["ts"] < _OVERVIEW_TTL:
+        return _overview_cache["data"]
+
     repos_count = (await db.execute(
         select(func.count()).select_from(IndexedRepo).where(IndexedRepo.indexing_status == "done")
     )).scalar() or 0
@@ -28,20 +37,22 @@ async def get_stats_overview(db: AsyncSession = Depends(get_db)):
         select(func.count()).select_from(Notification).where(Notification.read == False)
     )).scalar() or 0
 
-    # Qdrant info
     try:
         ck = qdrant_client.get_collection("company_knowledge")
         qdrant_points = ck.points_count
     except Exception:
         qdrant_points = int(chunks_total)
 
-    return {
+    result = {
         "repos_indexed": repos_count,
         "chunks_total": int(chunks_total),
         "qdrant_points": qdrant_points,
         "decisions_captured": decisions_count,
         "notifications_unread": notifications_unread,
     }
+    _overview_cache["data"] = result
+    _overview_cache["ts"] = now
+    return result
 
 
 @router.get("/activity")

@@ -5,12 +5,15 @@ from app.api import health, indexing, search, repos, webhooks, auth, notificatio
 from app.core.config import settings
 from app.db.session import init_db
 from app.services.qdrant import init_collections
+from app.services import embeddings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await init_collections()
+    # Modelo de embeddings carregado lazy — apenas na primeira busca
+    # Indexação roda no celery-worker, não aqui
     yield
 
 

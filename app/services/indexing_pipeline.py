@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.models import IndexedRepo, IndexingLog
 from app.services import github_client, repo_analyzer, chunker, embeddings
 from app.services.qdrant import client as qdrant_client
+import asyncio
 from qdrant_client.models import PointStruct
 
 
@@ -21,11 +22,13 @@ async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
     """Pipeline completo: clone → analyze → chunk → embed → ingest → persist."""
     start = time.time()
 
-    # 1. Clone o repo
-    repo_path = github_client.clone_repo(github_full_name, REPOS_DIR, settings.github_pat)
+    # 1. Clone o repo (em thread para não bloquear o event loop)
+    repo_path = await asyncio.to_thread(
+        github_client.clone_repo, github_full_name, REPOS_DIR, settings.github_pat
+    )
 
-    # 2. Analisa
-    analysis = repo_analyzer.analyze_repo(repo_path)
+    # 2. Analisa (CPU-bound — também em thread)
+    analysis = await asyncio.to_thread(repo_analyzer.analyze_repo, repo_path)
 
     # 3. Pega/cria IndexedRepo no banco
     result = await db.execute(
@@ -69,27 +72,26 @@ async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
         all_chunks.extend(file_chunks)
         files_processed += 1
 
-    # 6. Embeddings + ingestão no Qdrant
+    # 6. Embeddings + ingestão no Qdrant (batch de 25 para evitar OOM)
+    EMBED_BATCH = 25
     chunks_created = 0
     if all_chunks:
-        texts = [c.content for c in all_chunks]
-        vectors = embeddings.embed_texts(texts)
+        for i in range(0, len(all_chunks), EMBED_BATCH):
+            batch_chunks = all_chunks[i : i + EMBED_BATCH]
+            texts = [c.content for c in batch_chunks]
+            vectors = embeddings.embed_texts(texts)
 
-        points = []
-        for i, (chunk, vector) in enumerate(zip(all_chunks, vectors)):
-            point = PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector if isinstance(vector, list) else vector.tolist(),
-                payload={**chunk.metadata, "content": chunk.content},
-            )
-            points.append(point)
+            points = []
+            for chunk, vector in zip(batch_chunks, vectors):
+                point = PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector if isinstance(vector, list) else vector.tolist(),
+                    payload={**chunk.metadata, "content": chunk.content},
+                )
+                points.append(point)
 
-        # Batch de 100
-        for i in range(0, len(points), 100):
-            batch = points[i : i + 100]
-            qdrant_client.upsert(collection_name="company_knowledge", points=batch)
-
-        chunks_created = len(points)
+            qdrant_client.upsert(collection_name="company_knowledge", points=points)
+            chunks_created += len(points)
 
     # 7. Finaliza
     duration_ms = int((time.time() - start) * 1000)

@@ -1,10 +1,18 @@
-const HUB_URL = process.env.HUB_API_URL || "http://hub-api:8000";
+const HUB_URL = process.env.HUB_API_URL || "http://host.docker.internal:8010";
 
-export async function hubFetch<T>(path: string, options?: RequestInit): Promise<T> {
+// revalidate: 30s para dados que mudam raramente (repos, stats, grafo)
+// no-store: apenas para dados em tempo real (notificações, search)
+export async function hubFetch<T>(
+  path: string,
+  options?: RequestInit & { revalidate?: number | false },
+): Promise<T> {
+  const { revalidate = 30, ...fetchOptions } = options ?? {};
+
   const res = await fetch(`${HUB_URL}/api/v1${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
-    cache: "no-store",
+    ...fetchOptions,
+    headers: { "Content-Type": "application/json", ...(fetchOptions?.headers || {}) },
+    next: revalidate === false ? undefined : { revalidate },
+    cache: revalidate === false ? "no-store" : undefined,
   });
   if (!res.ok) throw new Error(`Hub API error: ${res.status} ${path}`);
   return res.json();

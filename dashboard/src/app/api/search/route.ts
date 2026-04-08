@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const HUB_URL = process.env.HUB_API_URL || "http://hub-api:8000";
+const HUB_URL = process.env.HUB_API_URL || "http://host.docker.internal:8010";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
