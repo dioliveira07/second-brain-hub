@@ -20,7 +20,11 @@ def clone_repo(full_name: str, target_dir: str, token: str) -> str:
 
     if repo_path.exists():
         subprocess.run(
-            ["git", "-C", str(repo_path), "pull", "--depth=1"],
+            ["git", "-C", str(repo_path), "fetch", "--depth=1", "origin", "HEAD"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo_path), "reset", "--hard", "FETCH_HEAD"],
             check=True, capture_output=True,
         )
     else:
