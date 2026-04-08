@@ -78,7 +78,7 @@ function ScoreBar({ score }: { score: number }) {
       >
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
       </div>
-      <span style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color }}>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: "0.72rem", color }}>
         {pct}%
       </span>
     </div>
@@ -104,11 +104,11 @@ function ResultCard({ r }: { r: SearchResult }) {
               {r.repo.replace('dioliveira07/', '')}
             </span>
             <span style={{ color: 'var(--dim)', fontSize: '0.7rem' }}>/</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {r.file_path}
             </span>
             {r.symbol_name && (
-              <span style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--purple)' }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: "0.72rem", color: 'var(--purple)' }}>
                 #{r.symbol_name}
               </span>
             )}
@@ -118,7 +118,7 @@ function ResultCard({ r }: { r: SearchResult }) {
             <span
               style={{
                 fontFamily: 'var(--mono)',
-                fontSize: '0.6rem',
+                fontSize: "0.72rem",
                 color: langColor,
                 background: `${langColor}18`,
                 border: `1px solid ${langColor}33`,
@@ -132,8 +132,8 @@ function ResultCard({ r }: { r: SearchResult }) {
               <span
                 style={{
                   fontFamily: 'var(--mono)',
-                  fontSize: '0.6rem',
-                  color: 'var(--muted)',
+                  fontSize: "0.72rem",
+                  color: 'var(--muted-foreground)',
                   background: 'var(--bg-panel)',
                   border: '1px solid var(--border)',
                   borderRadius: '3px',
@@ -185,7 +185,7 @@ function ResultCard({ r }: { r: SearchResult }) {
               onClick={() => setExpanded(true)}
               style={{
                 fontFamily: 'var(--mono)',
-                fontSize: '0.65rem',
+                fontSize: "0.72rem",
                 color: 'var(--cyan)',
                 background: 'none',
                 border: 'none',
@@ -205,8 +205,8 @@ function ResultCard({ r }: { r: SearchResult }) {
               display: 'block',
               width: '100%',
               fontFamily: 'var(--mono)',
-              fontSize: '0.65rem',
-              color: 'var(--muted)',
+              fontSize: "0.72rem",
+              color: 'var(--muted-foreground)',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
@@ -234,7 +234,7 @@ export function PlaybookClient() {
     setLoading(true);
     setSearched(true);
     try {
-      const res  = await fetch("/api/search", {
+      const res  = await fetch("/painel/api/search", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ query, limit: 20 }),
@@ -258,7 +258,7 @@ export function PlaybookClient() {
         <div style={{ flex: 1, position: 'relative' }}>
           <Search
             size={14}
-            style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }}
+            style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }}
           />
           <input
             type="text"
@@ -289,7 +289,7 @@ export function PlaybookClient() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
             <Loader2 size={24} color="var(--cyan)" style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--muted)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
               Consultando vetor semântico...
             </span>
           </div>
@@ -302,7 +302,7 @@ export function PlaybookClient() {
             <span className="label-accent" style={{ fontSize: '0.75rem' }}>
               Resultados
             </span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--muted)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: "0.72rem", color: 'var(--muted-foreground)' }}>
               {results.length} encontrados
             </span>
           </div>
@@ -318,7 +318,7 @@ export function PlaybookClient() {
           style={{ padding: '2rem', textAlign: 'center' }}
         >
           <FileCode size={28} color="var(--dim)" style={{ margin: '0 auto 0.75rem' }} />
-          <p style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>
+          <p style={{ color: 'var(--muted-foreground)', fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>
             Nenhum resultado encontrado para &quot;{query}&quot;
           </p>
         </div>

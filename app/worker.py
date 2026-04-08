@@ -46,16 +46,30 @@ def heartbeat_check():
             result = await db.execute(select(IndexedRepo).where(IndexedRepo.indexing_status == "done"))
             repos = result.scalars().all()
 
+            # Carrega notificações não lidas existentes para deduplicação
+            from sqlalchemy import select
+            existing_result = await db.execute(
+                select(Notification.repo, Notification.metadata)
+                .where(Notification.read == False, Notification.type == "stale_pr")
+            )
+            existing_keys = {
+                (row.repo, str(row.metadata.get("pr_number") if row.metadata else ""))
+                for row in existing_result
+            }
+
             for repo in repos:
                 # Verifica PRs abertos há mais de 3 dias (via GitHub API)
                 try:
                     stale_prs = await _check_stale_prs(repo.github_full_name)
                     for pr in stale_prs:
+                        key = (repo.github_full_name, str(pr["number"]))
+                        if key in existing_keys:
+                            continue  # já existe notificação não lida para este PR
                         notifications.append(Notification(
                             type="stale_pr",
                             repo=repo.github_full_name,
-                            message=f"PR #{pr['number']} '{pr['title']}' aberto há {pr['days']} dias sem review",
-                            extra_data={"pr_number": pr["number"], "days_open": pr["days"]},
+                            message=f"PR #{pr['number']} '{pr['title']}' aberto ha {pr['days']} dias sem review",
+                            metadata={"pr_number": pr["number"], "days_open": pr["days"]},
                         ))
                 except Exception:
                     pass

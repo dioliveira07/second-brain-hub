@@ -20,8 +20,7 @@
   --red:    #f87171;
 
   --text:   #e2e8f0;
-  --muted:  #4a6080;
-  --dim:    #223044;
+  --dim:    #5a7a9a;
 
   --mono: 'Fira Code', 'JetBrains Mono', monospace;
   --sans: 'Fira Sans', 'DM Sans', sans-serif;
@@ -44,7 +43,7 @@
   --secondary:         #0a1628;
   --secondary-foreground: #e2e8f0;
   --muted:             #0a1628;
-  --muted-foreground:  #4a6080;
+  --muted-foreground:  #8ab4cc;
   --accent:            #06b6d4;
   --accent-foreground: #020617;
   --destructive:       #f87171;
@@ -89,16 +88,16 @@ h1, h2, h3 { font-family: var(--mono); }
 /* Section label */
 .label {
   font-family: var(--mono);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .label-accent {
   font-family: var(--mono);
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -110,7 +109,7 @@ h1, h2, h3 { font-family: var(--mono); }
 
 .label-accent::before {
   content: '//';
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -139,7 +138,7 @@ h1, h2, h3 { font-family: var(--mono); }
   display: inline-flex;
   align-items: center;
   font-family: var(--mono);
-  font-size: 0.58rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -165,7 +164,7 @@ h1, h2, h3 { font-family: var(--mono); }
   transition: border-color 150ms, box-shadow 150ms;
 }
 
-.cyber-input::placeholder { color: var(--muted); }
+.cyber-input::placeholder { color: var(--muted-foreground); }
 .cyber-input:focus {
   outline: none;
   border-color: var(--cyan);

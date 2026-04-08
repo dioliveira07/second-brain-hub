@@ -48,7 +48,7 @@ export default async function RepoDetailPage({ params }: PageParams) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem", padding: "4rem 2rem", textAlign: "center" }}>
         <GitBranch size={36} color="var(--dim)" />
-        <p style={{ fontFamily: "var(--mono)", fontSize: "0.9rem", color: "var(--muted)" }}>
+        <p style={{ fontFamily: "var(--mono)", fontSize: "0.9rem", color: "var(--muted-foreground)" }}>
           Repositório não encontrado ou não indexado.
         </p>
         <Link href="/repos" style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--cyan)", textDecoration: "none" }}>
@@ -72,20 +72,20 @@ export default async function RepoDetailPage({ params }: PageParams) {
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
               <Link
                 href="/repos"
-                style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--muted)", textDecoration: "none", letterSpacing: "0.06em" }}
+                style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)", textDecoration: "none", letterSpacing: "0.06em" }}
               >
                 repos
               </Link>
-              <span style={{ color: "var(--dim)", fontSize: "0.65rem" }}>/</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--cyan)" }}>{repoName}</span>
+              <span style={{ color: "var(--dim)", fontSize: "0.72rem" }}>/</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--cyan)" }}>{repoName}</span>
             </div>
             <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.5rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", marginBottom: "0.4rem" }}>
-              <span style={{ color: "var(--muted)", fontWeight: 400 }}>{owner} / </span>{repoName}
+              <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>{owner} / </span>{repoName}
             </h2>
             {detail.last_indexed_at && (
               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                 <Clock size={11} color="var(--dim)" />
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--muted)" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>
                   indexado em {new Date(detail.last_indexed_at).toLocaleString("pt-BR")}
                 </span>
               </div>
@@ -113,7 +113,7 @@ export default async function RepoDetailPage({ params }: PageParams) {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginBottom: "0.75rem" }}>
                   <Icon size={13} color={color} />
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color, textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color, textTransform: "uppercase", letterSpacing: "0.12em" }}>
                     {label}
                   </span>
                 </div>
@@ -175,7 +175,7 @@ export default async function RepoDetailPage({ params }: PageParams) {
                 Decisões Arquiteturais
               </span>
             </div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "var(--muted)" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>
               {decisions.length} registradas
             </span>
           </div>
@@ -186,10 +186,10 @@ export default async function RepoDetailPage({ params }: PageParams) {
               style={{ padding: "2.5rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", textAlign: "center" }}
             >
               <CheckCircle2 size={28} color="var(--dim)" />
-              <p style={{ fontFamily: "var(--mono)", fontSize: "0.82rem", color: "var(--muted)" }}>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "0.82rem", color: "var(--muted-foreground)" }}>
                 Nenhuma decisão registrada.
               </p>
-              <p style={{ fontFamily: "var(--sans)", fontSize: "0.75rem", color: "var(--dim)" }}>
+              <p style={{ fontFamily: "var(--sans)", fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
                 Configure webhooks de PR no GitHub para capturar decisões automaticamente.
               </p>
             </div>
@@ -206,7 +206,7 @@ export default async function RepoDetailPage({ params }: PageParams) {
                   >
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "0.6rem" }}>
                       <h4 style={{ fontFamily: "var(--sans)", fontSize: "0.88rem", fontWeight: 500, color: "var(--text)", lineHeight: 1.4, margin: 0 }}>
-                        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted)", marginRight: "0.5rem" }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", marginRight: "0.5rem" }}>
                           PR #{d.pr_number}
                         </span>
                         {d.pr_title}
@@ -214,25 +214,25 @@ export default async function RepoDetailPage({ params }: PageParams) {
                       {d.breaking_changes && (
                         <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(248,113,113,.08)", border: "1px solid rgba(248,113,113,.22)", borderRadius: "var(--r)", padding: "3px 8px", flexShrink: 0 }}>
                           <AlertTriangle size={10} color="var(--red)" />
-                          <span style={{ fontFamily: "var(--mono)", fontSize: "0.57rem", color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Breaking</span>
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Breaking</span>
                         </div>
                       )}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <User size={10} color="var(--muted)" />
-                        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted)" }}>@{d.pr_author}</span>
+                        <User size={10} color="var(--muted-foreground)" />
+                        <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)" }}>@{d.pr_author}</span>
                       </div>
                       {d.merged_at && (
                         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                           <Calendar size={10} color="var(--dim)" />
-                          <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted)" }}>
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)" }}>
                             {new Date(d.merged_at).toLocaleDateString("pt-BR")}
                           </span>
                         </div>
                       )}
                       {(d.impact_areas || []).map((a) => (
-                        <span key={a} style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: "var(--purple)", background: "rgba(167,139,250,.08)", border: "1px solid rgba(167,139,250,.2)", borderRadius: "3px", padding: "1px 7px" }}>
+                        <span key={a} style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--purple)", background: "rgba(167,139,250,.08)", border: "1px solid rgba(167,139,250,.2)", borderRadius: "3px", padding: "1px 7px" }}>
                           {a}
                         </span>
                       ))}

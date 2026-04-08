@@ -45,6 +45,10 @@ services:
     image: qdrant/qdrant:v1.12.4
     volumes:
       - qdrant-data:/qdrant/storage
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/6333' 2>/dev/null && echo ok || exit 1"]
       interval: 10s

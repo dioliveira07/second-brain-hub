@@ -8,7 +8,7 @@ export default function PlaybookPage() {
         <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.6rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", marginBottom: "0.35rem" }}>
           Playbook
         </h2>
-        <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted)" }}>
+        <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
           Consulte o conhecimento indexado em linguagem natural
         </p>
       </div>

@@ -31,12 +31,12 @@ const CustomTooltip = ({ active, payload, label }: {
         fontSize: '0.75rem',
       }}
     >
-      <div style={{ color: 'var(--cyan)', marginBottom: '0.5rem', fontSize: '0.65rem' }}>
+      <div style={{ color: 'var(--cyan)', marginBottom: '0.5rem', fontSize: "0.72rem" }}>
         {label}
       </div>
       {payload.map((p) => (
         <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', color: p.color }}>
-          <span style={{ color: 'var(--muted)' }}>{p.name.replace('dioliveira07/', '')}</span>
+          <span style={{ color: 'var(--muted-foreground)' }}>{p.name.replace('dioliveira07/', '')}</span>
           <span>{p.value}</span>
         </div>
       ))}
@@ -49,7 +49,7 @@ export function ActivityClient({ activity }: { activity: ActivityData }) {
     return (
       <div
         className="panel"
-        style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: '0.85rem' }}
+        style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted-foreground)', fontFamily: 'var(--mono)', fontSize: '0.85rem' }}
       >
         Sem dados de atividade ainda.
       </div>
@@ -68,18 +68,18 @@ export function ActivityClient({ activity }: { activity: ActivityData }) {
         <BarChart data={activity.data} barCategoryGap="20%">
           <XAxis
             dataKey="week"
-            tick={{ fill: 'var(--muted)', fontSize: 10, fontFamily: 'var(--mono)' }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontFamily: 'var(--mono)' }}
             axisLine={{ stroke: 'var(--border)' }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: 'var(--muted)', fontSize: 10, fontFamily: 'var(--mono)' }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontFamily: 'var(--mono)' }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(6, 182, 212, 0.05)' }} />
           <Legend
-            wrapperStyle={{ fontFamily: 'var(--mono)', fontSize: '0.65rem', color: 'var(--muted)' }}
+            wrapperStyle={{ fontFamily: 'var(--mono)', fontSize: "0.72rem", color: 'var(--muted-foreground)' }}
             formatter={(value) => value.replace('dioliveira07/', '')}
           />
           {activity.repos.map((repo, i) => (

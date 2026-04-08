@@ -459,7 +459,7 @@ export function GraphPageClient({ initialNodes, initialEdges }: Props) {
             <Search size={11} style={{ position: "absolute", left: "0.65rem", top: "50%", transform: "translateY(-50%)", color: "rgba(0,212,255,0.5)", pointerEvents: "none" }} />
             <input type="text" placeholder="SEARCH NODE..." value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ width: 190, fontSize: "0.68rem", background: "rgba(7,11,20,0.88)", border: "1px solid rgba(0,212,255,0.22)",
+              style={{ width: 190, fontSize: "0.75rem", background: "rgba(7,11,20,0.88)", border: "1px solid rgba(0,212,255,0.22)",
                 borderRadius: 2, color: "#00d4ff", padding: "0.42rem 0.7rem 0.42rem 2rem", outline: "none",
                 fontFamily: "'Fira Code', monospace", letterSpacing: "0.1em",
               }}
@@ -471,13 +471,13 @@ export function GraphPageClient({ initialNodes, initialEdges }: Props) {
           {(["repo", "technology", "developer"] as const).map(type => (
             <div key={type} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: type === "repo" ? 1 : "50%", border: `1px solid ${TYPE_COLOR[type]}`, boxShadow: `0 0 6px ${TYPE_COLOR[type]}`, flexShrink: 0 }} />
-              <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.58rem", color: TYPE_COLOR[type] + "88", textTransform: "uppercase", letterSpacing: "0.12em" }}>{type}</span>
+              <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: TYPE_COLOR[type] + "88", textTransform: "uppercase", letterSpacing: "0.12em" }}>{type}</span>
             </div>
           ))}
         </div>
 
         <div style={{ position: "absolute", bottom: "1.25rem", right: selected ? "292px" : "1.25rem", zIndex: 10,
-          fontFamily: "'Fira Code', monospace", fontSize: "0.56rem", color: "rgba(0,212,255,0.22)", transition: "right 0.25s",
+          fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: "rgba(0,212,255,0.22)", transition: "right 0.25s",
         }}>
           {initialNodes.length} nodes · {projectedEdges.length} links
         </div>
@@ -518,19 +518,19 @@ export function GraphPageClient({ initialNodes, initialEdges }: Props) {
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem", paddingTop: "0.4rem" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.52rem", color: selColor, textTransform: "uppercase", letterSpacing: "0.22em", marginBottom: 6 }}>
+              <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: selColor, textTransform: "uppercase", letterSpacing: "0.22em", marginBottom: 6 }}>
                 ◈ {selected.type}
               </div>
               <h3 style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.78rem", color: "#e2e8f0", fontWeight: 600, wordBreak: "break-all", margin: 0, lineHeight: 1.45 }}>
                 {selected.label}
               </h3>
             </div>
-            <button onClick={() => setSelected(null)} style={{ background: "none", border: `1px solid ${selColor}22`, color: "#4a5568", cursor: "pointer", padding: 4, borderRadius: 2, flexShrink: 0, lineHeight: 0, marginLeft: 10 }}>
+            <button onClick={() => setSelected(null)} style={{ background: "none", border: `1px solid ${selColor}22`, color: "#8ab4cc", cursor: "pointer", padding: 4, borderRadius: 2, flexShrink: 0, lineHeight: 0, marginLeft: 10 }}>
               <X size={12} />
             </button>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'Fira Code', monospace", fontSize: "0.6rem", color: selColor + "55", marginBottom: "1.2rem", paddingBottom: "0.9rem", borderBottom: `1px solid ${selColor}0d` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: selColor + "55", marginBottom: "1.2rem", paddingBottom: "0.9rem", borderBottom: `1px solid ${selColor}0d` }}>
             <Zap size={10} color={selColor + "66"} />
             {connCountRef.current.get(selected.id) || 0} connections
             <GitBranch size={10} color={selColor + "44"} style={{ marginLeft: 6 }} />
@@ -540,8 +540,8 @@ export function GraphPageClient({ initialNodes, initialEdges }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
             {Object.entries(selected.data || {}).map(([k, v]) => (
               <div key={k} style={{ background: "rgba(0,212,255,0.025)", border: `1px solid ${selColor}0d`, borderRadius: 2, padding: "0.45rem 0.6rem" }}>
-                <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.52rem", color: selColor + "44", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 3 }}>{k.replace(/_/g, " ")}</div>
-                <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.68rem", color: "#7da8c8", wordBreak: "break-all", lineHeight: 1.4 }}>
+                <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.72rem", color: selColor + "44", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 3 }}>{k.replace(/_/g, " ")}</div>
+                <div style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", color: "#7da8c8", wordBreak: "break-all", lineHeight: 1.4 }}>
                   {typeof v === "object" ? JSON.stringify(v) : String(v)}
                 </div>
               </div>
