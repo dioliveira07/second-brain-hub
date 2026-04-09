@@ -49,11 +49,11 @@ def heartbeat_check():
             # Carrega notificações não lidas existentes para deduplicação
             from sqlalchemy import select
             existing_result = await db.execute(
-                select(Notification.repo, Notification.metadata)
+                select(Notification.repo, Notification.extra_data)
                 .where(Notification.read == False, Notification.type == "stale_pr")
             )
             existing_keys = {
-                (row.repo, str(row.metadata.get("pr_number") if row.metadata else ""))
+                (row.repo, str(row.extra_data.get("pr_number") if row.extra_data else ""))
                 for row in existing_result
             }
 
@@ -69,7 +69,7 @@ def heartbeat_check():
                             type="stale_pr",
                             repo=repo.github_full_name,
                             message=f"PR #{pr['number']} '{pr['title']}' aberto ha {pr['days']} dias sem review",
-                            metadata={"pr_number": pr["number"], "days_open": pr["days"]},
+                            extra_data={"pr_number": pr["number"], "days_open": pr["days"]},
                         ))
                 except Exception:
                     pass
@@ -150,8 +150,8 @@ def refresh_all_permissions():
 
 
 @celery_app.task(name="app.worker.index_repo_task")
-def index_repo_task(github_full_name: str):
-    """Task assíncrona para indexar um repo."""
+def index_repo_task(github_full_name: str, changed_files: list | None = None):
+    """Task assíncrona para indexar um repo. Se changed_files for passado, reindexar só esses."""
     import asyncio
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from app.services.indexing_pipeline import index_repo
@@ -160,7 +160,7 @@ def index_repo_task(github_full_name: str):
         engine = create_async_engine(settings.database_url, echo=False)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with session_factory() as db:
-            result = await index_repo(github_full_name, db)
+            result = await index_repo(github_full_name, db, changed_files=changed_files)
         await engine.dispose()
         return result
 

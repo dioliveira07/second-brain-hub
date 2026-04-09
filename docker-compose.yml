@@ -17,6 +17,11 @@ services:
         condition: service_healthy
     volumes:
       - git-mirrors:/data/repos
+      - /root/.local/share/claude/versions/2.1.96:/usr/local/bin/claude:ro
+      - /root/.claude.json:/root/.claude.json:ro
+      - /root/.claude:/root/.claude:ro
+      - /root/skills:/root/skills:ro
+      - /root/.second-brain:/root/.second-brain:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   celery-worker:
@@ -30,7 +35,13 @@ services:
       - qdrant
     volumes:
       - git-mirrors:/data/repos
-    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
+    environment:
+      # Limita threads do modelo de embeddings (sentence-transformers/torch/numpy)
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      TOKENIZERS_PARALLELISM: "false"
+    command: nice -n 15 celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
 
   celery-beat:
     build:

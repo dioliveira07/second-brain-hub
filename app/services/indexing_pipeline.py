@@ -18,8 +18,12 @@ from qdrant_client.models import PointStruct
 REPOS_DIR = "/data/repos"
 
 
-async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
-    """Pipeline completo: clone → analyze → chunk → embed → ingest → persist."""
+async def index_repo(github_full_name: str, db: AsyncSession, changed_files: list | None = None) -> dict:
+    """Pipeline completo: clone → analyze → chunk → embed → ingest → persist.
+
+    Se changed_files for passado (lista de paths relativos), processa apenas esses arquivos
+    e deleta/reinserge somente seus pontos no Qdrant — indexação incremental.
+    """
     start = time.time()
 
     # 1. Clone o repo (em thread para não bloquear o event loop)
@@ -47,15 +51,39 @@ async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
     await db.refresh(indexed_repo)
 
     # 4. Cria IndexingLog
-    log = IndexingLog(repo_id=indexed_repo.id, trigger="manual", status="running")
+    trigger = "webhook_incremental" if changed_files else "manual"
+    log = IndexingLog(repo_id=indexed_repo.id, trigger=trigger, status="running")
     db.add(log)
     await db.commit()
 
-    # 5. Chunking dos key_files
+    # 5. Chunking — filtra key_files se for indexação incremental
     all_chunks = []
     files_processed = 0
 
-    for kf in analysis["key_files"]:
+    # Normaliza os paths alterados para comparação
+    changed_set = {cf.lstrip("/") for cf in changed_files} if changed_files else None
+
+    key_files_to_process = analysis["key_files"]
+    if changed_set:
+        key_files_to_process = [kf for kf in analysis["key_files"] if kf["path"] in changed_set]
+
+        if key_files_to_process:
+            # Remove pontos antigos desses arquivos do Qdrant antes de reinserir
+            from qdrant_client.models import Filter, FieldCondition, MatchAny, MatchValue, FilterSelector
+            paths_to_delete = [kf["path"] for kf in key_files_to_process]
+            qdrant_client.delete(
+                collection_name="company_knowledge",
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[
+                            FieldCondition(key="repo", match=MatchValue(value=github_full_name)),
+                            FieldCondition(key="file_path", match=MatchAny(any=paths_to_delete)),
+                        ]
+                    )
+                ),
+            )
+
+    for kf in key_files_to_process:
         file_path = Path(repo_path) / kf["path"]
         if not file_path.exists() or not file_path.is_file():
             continue
@@ -72,14 +100,14 @@ async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
         all_chunks.extend(file_chunks)
         files_processed += 1
 
-    # 6. Embeddings + ingestão no Qdrant (batch de 25 para evitar OOM)
-    EMBED_BATCH = 25
+    # 6. Embeddings + ingestão no Qdrant (batch pequeno + pausa para não estourar CPU)
+    EMBED_BATCH = 10  # reduzido de 25 para 10 — menos pressão de memória e CPU por ciclo
     chunks_created = 0
     if all_chunks:
         for i in range(0, len(all_chunks), EMBED_BATCH):
             batch_chunks = all_chunks[i : i + EMBED_BATCH]
             texts = [c.content for c in batch_chunks]
-            vectors = embeddings.embed_texts(texts)
+            vectors = await asyncio.to_thread(embeddings.embed_texts, texts)
 
             points = []
             for chunk, vector in zip(batch_chunks, vectors):
@@ -92,6 +120,10 @@ async def index_repo(github_full_name: str, db: AsyncSession) -> dict:
 
             qdrant_client.upsert(collection_name="company_knowledge", points=points)
             chunks_created += len(points)
+
+            # Pausa entre batches para não monopolizar a CPU da VPS
+            if i + EMBED_BATCH < len(all_chunks):
+                await asyncio.sleep(0.5)
 
     # 7. Finaliza
     duration_ms = int((time.time() - start) * 1000)
