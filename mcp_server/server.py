@@ -499,23 +499,38 @@ def run_http(port: int = 8020):
         else:
             await session_manager.handle_request(scope, receive, send)
 
+    # ── SSE transport (sem OAuth) ─────────────────────────────────────────────────
+    from mcp.server.sse import SseServerTransport
+
+    sse_transport = SseServerTransport("/sse/messages")
+
+    async def handle_sse(request: Request):
+        async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
+            await app.run(streams[0], streams[1], app.create_initialization_options())
+
     async def lifespan(app_):
         async with session_manager.run():
             yield
 
     starlette_app = Starlette(
         routes=[
+            # OAuth (para --transport http)
             Route("/.well-known/oauth-protected-resource", oauth_protected_resource),
             Route("/.well-known/oauth-authorization-server", oauth_authorization_server),
             Route("/oauth/register", oauth_register, methods=["POST"]),
             Route("/oauth/authorize", oauth_authorize, methods=["GET"]),
             Route("/oauth/token", oauth_token, methods=["POST"]),
+            # SSE transport (sem OAuth — para --transport sse)
+            Route("/sse", handle_sse),
+            Mount("/sse/messages", app=sse_transport.handle_post_message),
+            # Streamable HTTP (para --transport http)
             Mount("/mcp", app=handle_mcp),
         ],
         lifespan=lifespan,
     )
 
     print(f"MCP Server HTTP rodando em http://0.0.0.0:{port}/mcp", flush=True)
+    print(f"MCP Server SSE rodando em http://0.0.0.0:{port}/sse", flush=True)
     uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="info")
 
 
