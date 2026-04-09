@@ -271,6 +271,27 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
     return {"status": "ok", "expires_at": expires_at.isoformat()}
 
 
+@router.get("/ssh/identities")
+async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
+    """Lista todas as identidades SSH ativas (não expiradas)."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(SSHIdentity)
+        .where(SSHIdentity.expires_at > now)
+        .order_by(SSHIdentity.created_at.desc())
+    )
+    identities = result.scalars().all()
+    return [
+        {
+            "dev": i.dev,
+            "ssh_ip": i.ssh_ip,
+            "ssh_port": i.ssh_port,
+            "expires_at": i.expires_at.isoformat(),
+        }
+        for i in identities
+    ]
+
+
 @router.get("/ssh/identity")
 async def get_ssh_identity(ip: str, port: str, db: AsyncSession = Depends(get_db)):
     """Retorna o dev identificado para esta sessão SSH (se não expirado)."""

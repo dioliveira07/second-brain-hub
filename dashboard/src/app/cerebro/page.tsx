@@ -28,10 +28,18 @@ export type MCPConn = {
   ativo: boolean;
 };
 
+export type SSHIdentity = {
+  dev: string;
+  ssh_ip: string;
+  ssh_port: string;
+  expires_at: string;
+};
+
 export default async function CerebroPage() {
   let sessoes: Sessao[] = [];
   let afinidade: AfinidadeItem[] = [];
   let mcpConns: MCPConn[] = [];
+  let sshIdentities: SSHIdentity[] = [];
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -44,6 +52,10 @@ export default async function CerebroPage() {
 
   try {
     mcpConns = await cerebroFetch<MCPConn[]>("/mcp/connections");
+  } catch {}
+
+  try {
+    sshIdentities = await cerebroFetch<SSHIdentity[]>("/ssh/identities");
   } catch {}
 
   return (
@@ -60,7 +72,7 @@ export default async function CerebroPage() {
         </div>
       </FadeIn>
 
-      <CerebroClient sessoes={sessoes} afinidade={afinidade} mcpConns={mcpConns} />
+      <CerebroClient sessoes={sessoes} afinidade={afinidade} mcpConns={mcpConns} sshIdentities={sshIdentities} />
     </div>
   );
 }

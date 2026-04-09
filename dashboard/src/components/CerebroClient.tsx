@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
-import { Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi } from "lucide-react";
-import type { Sessao, AfinidadeItem, MCPConn } from "@/app/cerebro/page";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal } from "lucide-react";
+import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -227,8 +228,51 @@ function MCPConnCard({ c }: { c: MCPConn }) {
   );
 }
 
-export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessao[]; afinidade: AfinidadeItem[]; mcpConns: MCPConn[] }) {
-  const [tab, setTab] = useState<"sessoes" | "afinidade" | "mcp">("sessoes");
+function SSHIdentityCard({ id }: { id: SSHIdentity }) {
+  const expiresDate = new Date(id.expires_at);
+  const now = new Date();
+  const minutesLeft = Math.round((expiresDate.getTime() - now.getTime()) / 60000);
+  const hoursLeft = Math.floor(minutesLeft / 60);
+  const timeLeft = hoursLeft > 0 ? `${hoursLeft}h restantes` : `${minutesLeft}min restantes`;
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.green}33`,
+      borderRadius: 8, padding: "0.75rem 1rem",
+      display: "flex", alignItems: "center", gap: "0.75rem",
+    }}>
+      <Terminal size={14} color={C.green} style={{ flexShrink: 0 }} />
+      <Avatar name={id.dev} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: devColor(id.dev) }}>
+            {id.dev}
+          </span>
+          <span style={{
+            background: `${C.green}22`, border: `1px solid ${C.green}44`,
+            color: C.green, borderRadius: 4, padding: "0px 6px",
+            fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
+          }}>ATIVO</span>
+        </div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
+          {id.ssh_ip}:{id.ssh_port}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
+        <Clock size={11} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeLeft}</span>
+      </div>
+    </div>
+  );
+}
+
+export function CerebroClient({ sessoes, afinidade, mcpConns, sshIdentities }: { sessoes: Sessao[]; afinidade: AfinidadeItem[]; mcpConns: MCPConn[]; sshIdentities: SSHIdentity[] }) {
+  const [tab, setTab] = useState<"sessoes" | "afinidade" | "mcp" | "ssh">("sessoes");
+  const router = useRouter();
+
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 30_000);
+    return () => clearInterval(id);
+  }, [router]);
 
   const recentSessoes = sessoes.filter(s => s.minutos_atras < 60);
   const activeMCP = mcpConns.filter(c => c.ativo);
@@ -242,6 +286,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessa
           { label: "Devs ativos (1h)", value: recentSessoes.length, icon: <Users size={14} />, color: C.green },
           { label: "Projetos com atividade", value: [...new Set(sessoes.map(s => s.projeto))].length, icon: <FileCode size={14} />, color: C.yellow },
           { label: "Clientes MCP", value: activeMCP.length, icon: <Wifi size={14} />, color: C.purple },
+          { label: "Devs via SSH", value: sshIdentities.length, icon: <Terminal size={14} />, color: C.green },
         ].map(({ label, value, icon, color }) => (
           <div key={label} style={{
             flex: "1 1 160px", background: C.card, border: `1px solid ${C.border}`,
@@ -259,7 +304,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessa
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: "0.25rem", borderBottom: `1px solid ${C.border}`, paddingBottom: "0" }}>
-        {(["sessoes", "afinidade", "mcp"] as const).map(t => (
+        {(["sessoes", "afinidade", "mcp", "ssh"] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -272,7 +317,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessa
               letterSpacing: "0.05em", transition: "all 150ms",
             }}
           >
-            {t === "sessoes" ? "Sessões" : t === "afinidade" ? "Afinidade" : `MCP (${activeMCP.length})`}
+            {t === "sessoes" ? "Sessões" : t === "afinidade" ? "Afinidade" : t === "mcp" ? `MCP (${activeMCP.length})` : `SSH (${sshIdentities.length})`}
           </button>
         ))}
       </div>
@@ -314,11 +359,25 @@ export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessa
               Nenhum cliente MCP conectado nas últimas 24h.
               <br />
               <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
-                Rode o bootstrap para conectar: <code>claude mcp add --transport http second-brain-hub http://hub.fluxiom.com.br:8020/mcp</code>
+                Rode o bootstrap para conectar: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br:8020/sse</code>
               </span>
             </div>
           ) : (
             mcpConns.map((c, i) => <MCPConnCard key={i} c={c} />)
+          )}
+        </div>
+      )}
+
+      {tab === "ssh" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {sshIdentities.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+              Nenhum dev identificado via SSH no momento.
+              <br />
+              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/s sbh-auth seu-nome</code> para se identificar.</span>
+            </div>
+          ) : (
+            sshIdentities.map((id, i) => <SSHIdentityCard key={i} id={id} />)
           )}
         </div>
       )}
