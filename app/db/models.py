@@ -113,3 +113,15 @@ class DevSignal(Base):
     dados: Mapped[dict] = mapped_column(JSONB, default=dict)         # payload específico por tipo
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MCPConnection(Base):
+    """Rastreamento de clientes conectados ao MCP server HTTP centralizado."""
+    __tablename__ = "mcp_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_ip: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # hostname ou user-agent
+    machine: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

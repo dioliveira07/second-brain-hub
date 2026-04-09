@@ -18,9 +18,20 @@ export type AfinidadeItem = {
   score: number;
 };
 
+export type MCPConn = {
+  client_ip: string;
+  client_name: string | null;
+  machine: string | null;
+  connected_at: string;
+  last_seen_at: string;
+  minutos_atras: number;
+  ativo: boolean;
+};
+
 export default async function CerebroPage() {
   let sessoes: Sessao[] = [];
   let afinidade: AfinidadeItem[] = [];
+  let mcpConns: MCPConn[] = [];
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -29,6 +40,10 @@ export default async function CerebroPage() {
   try {
     const af = await cerebroFetch<{ tabela: AfinidadeItem[] }>("/afinidade?dias=30");
     afinidade = af.tabela ?? [];
+  } catch {}
+
+  try {
+    mcpConns = await cerebroFetch<MCPConn[]>("/mcp/connections");
   } catch {}
 
   return (
@@ -40,12 +55,12 @@ export default async function CerebroPage() {
             Cérebro
           </h2>
           <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
-            Sessões ativas, afinidade de devs e contexto entre equipes
+            Sessões ativas, afinidade de devs e clientes MCP conectados
           </p>
         </div>
       </FadeIn>
 
-      <CerebroClient sessoes={sessoes} afinidade={afinidade} />
+      <CerebroClient sessoes={sessoes} afinidade={afinidade} mcpConns={mcpConns} />
     </div>
   );
 }

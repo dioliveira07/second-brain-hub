@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from app.services import embeddings
 from app.services.qdrant import client as qdrant_client
+from app.services.synthesis import synthesize
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 router = APIRouter()
@@ -11,6 +12,7 @@ class SearchRequest(BaseModel):
     query: str
     repos: list[str] | None = None  # filtro opcional por repos
     limit: int = 10
+    synthesize: bool = False  # se True, gera resposta sintetizada via Claude
 
 
 class SearchResult(BaseModel):
@@ -73,9 +75,21 @@ async def semantic_search(request: SearchRequest):
             "symbol_name": payload.get("symbol_name", ""),
             "chunk_index": payload.get("chunk_index", 0),
             "snippet": content[:500],
+            "_full_content": content,  # usado internamente pela síntese
         })
 
     # Reordena pelo score final
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    return {"query": request.query, "results": results, "total": len(results)}
+    # Síntese opcional via Claude CLI — Claude pesquisa autonomamente via MCP
+    answer = None
+    if request.synthesize and results:
+        raw_hits = [{"payload": {**r, "snippet": r["_full_content"]}} for r in results]
+        repo_filter = request.repos[0] if request.repos and len(request.repos) == 1 else None
+        answer = await synthesize(request.query, raw_hits, repo_filter=repo_filter)
+
+    # Remove _full_content da resposta (campo interno)
+    for r in results:
+        r.pop("_full_content", None)
+
+    return {"query": request.query, "results": results, "total": len(results), "answer": answer}

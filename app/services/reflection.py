@@ -48,11 +48,25 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
 ```
 """
 
-    # 3. Embed e insere no Qdrant
-    vectors = embeddings.embed_texts([raw_document])
-    point_id = str(uuid.uuid4())
-
     merged_at_iso = merged_at or datetime.now(timezone.utc).isoformat()
+
+    # 4. Persiste no PostgreSQL (dedup: skip if already exists)
+    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
+    indexed_repo = result.scalar_one_or_none()
+
+    if indexed_repo:
+        existing = await db.execute(
+            select(ArchitecturalDecision).where(
+                ArchitecturalDecision.repo_id == indexed_repo.id,
+                ArchitecturalDecision.pr_number == pr_number,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return {"pr_number": pr_number, "repo": full_name, "skipped": True}
+
+    # 3. Embed e insere no Qdrant (ID determinístico para evitar duplicatas)
+    vectors = embeddings.embed_texts([raw_document])
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{full_name}#{pr_number}"))
 
     vector = vectors[0]
     if not isinstance(vector, list):
@@ -75,10 +89,6 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
             }
         )]
     )
-
-    # 4. Persiste no PostgreSQL
-    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
-    indexed_repo = result.scalar_one_or_none()
 
     if indexed_repo:
         decision = ArchitecturalDecision(

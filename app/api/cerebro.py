@@ -15,7 +15,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal
+from app.db.models import SessionContext, DevSignal, MCPConnection
 
 router = APIRouter()
 
@@ -233,6 +233,68 @@ async def get_afinidade_projeto(projeto: str, dias: int = 30, db: AsyncSession =
         reverse=True,
     )
     return {"projeto": projeto, "dias": dias, "ranking": ranking}
+
+
+# ── MCP Connections ────────────────────────────────────────────────────────────
+
+class MCPConnectPayload(BaseModel):
+    client_ip: str
+    client_name: str = ""
+    machine: str = ""
+
+
+@router.post("/mcp/connect")
+async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession = Depends(get_db)):
+    """Registra ou atualiza uma conexão de cliente MCP."""
+    # Upsert por client_ip
+    result = await db.execute(
+        select(MCPConnection).where(MCPConnection.client_ip == payload.client_ip)
+    )
+    existing = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+
+    if existing:
+        existing.last_seen_at = now
+        if payload.client_name:
+            existing.client_name = payload.client_name
+        if payload.machine:
+            existing.machine = payload.machine
+    else:
+        db.add(MCPConnection(
+            client_ip=payload.client_ip,
+            client_name=payload.client_name or None,
+            machine=payload.machine or None,
+            connected_at=now,
+            last_seen_at=now,
+        ))
+
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/mcp/connections")
+async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
+    """Lista clientes MCP conectados (vistos nas últimas 24h)."""
+    desde = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await db.execute(
+        select(MCPConnection)
+        .where(MCPConnection.last_seen_at >= desde)
+        .order_by(MCPConnection.last_seen_at.desc())
+    )
+    conns = result.scalars().all()
+    agora = datetime.now(timezone.utc)
+    return [
+        {
+            "client_ip": c.client_ip,
+            "client_name": c.client_name,
+            "machine": c.machine,
+            "connected_at": c.connected_at.isoformat(),
+            "last_seen_at": c.last_seen_at.isoformat(),
+            "minutos_atras": int((agora - c.last_seen_at).total_seconds() / 60),
+            "ativo": (agora - c.last_seen_at).total_seconds() < 3600,
+        }
+        for c in conns
+    ]
 
 
 @router.get("/afinidade")

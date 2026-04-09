@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Brain, Users, Clock, GitBranch, FileCode, Zap } from "lucide-react";
-import type { Sessao, AfinidadeItem } from "@/app/cerebro/page";
+import { Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi } from "lucide-react";
+import type { Sessao, AfinidadeItem, MCPConn } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -193,10 +193,45 @@ function AfinidadeTable({ afinidade }: { afinidade: AfinidadeItem[] }) {
   );
 }
 
-export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afinidade: AfinidadeItem[] }) {
-  const [tab, setTab] = useState<"sessoes" | "afinidade">("sessoes");
+function MCPConnCard({ c }: { c: MCPConn }) {
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${c.ativo ? C.cyan + "33" : C.border}`,
+      borderRadius: 8, padding: "0.75rem 1rem",
+      display: "flex", alignItems: "center", gap: "0.75rem",
+    }}>
+      <Wifi size={14} color={c.ativo ? C.cyan : C.dim} style={{ flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: c.ativo ? C.cyan : C.muted }}>
+            {c.machine || c.client_ip}
+          </span>
+          {c.ativo && (
+            <span style={{
+              background: `${C.green}22`, border: `1px solid ${C.green}44`,
+              color: C.green, borderRadius: 4, padding: "0px 6px",
+              fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
+            }}>ATIVO</span>
+          )}
+        </div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
+          {c.client_ip}
+          {c.client_name && <span style={{ marginLeft: "0.5rem", opacity: 0.6 }}>· {c.client_name.slice(0, 60)}</span>}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
+        <Clock size={11} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(c.minutos_atras)}</span>
+      </div>
+    </div>
+  );
+}
+
+export function CerebroClient({ sessoes, afinidade, mcpConns }: { sessoes: Sessao[]; afinidade: AfinidadeItem[]; mcpConns: MCPConn[] }) {
+  const [tab, setTab] = useState<"sessoes" | "afinidade" | "mcp">("sessoes");
 
   const recentSessoes = sessoes.filter(s => s.minutos_atras < 60);
+  const activeMCP = mcpConns.filter(c => c.ativo);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -206,6 +241,7 @@ export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afini
           { label: "Sessões registradas", value: sessoes.length, icon: <Brain size={14} />, color: C.cyan },
           { label: "Devs ativos (1h)", value: recentSessoes.length, icon: <Users size={14} />, color: C.green },
           { label: "Projetos com atividade", value: [...new Set(sessoes.map(s => s.projeto))].length, icon: <FileCode size={14} />, color: C.yellow },
+          { label: "Clientes MCP", value: activeMCP.length, icon: <Wifi size={14} />, color: C.purple },
         ].map(({ label, value, icon, color }) => (
           <div key={label} style={{
             flex: "1 1 160px", background: C.card, border: `1px solid ${C.border}`,
@@ -223,7 +259,7 @@ export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afini
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: "0.25rem", borderBottom: `1px solid ${C.border}`, paddingBottom: "0" }}>
-        {(["sessoes", "afinidade"] as const).map(t => (
+        {(["sessoes", "afinidade", "mcp"] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -236,7 +272,7 @@ export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afini
               letterSpacing: "0.05em", transition: "all 150ms",
             }}
           >
-            {t === "sessoes" ? "Sessões" : "Afinidade"}
+            {t === "sessoes" ? "Sessões" : t === "afinidade" ? "Afinidade" : `MCP (${activeMCP.length})`}
           </button>
         ))}
       </div>
@@ -268,6 +304,22 @@ export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afini
           <div style={{ padding: "1rem" }}>
             <AfinidadeTable afinidade={afinidade} />
           </div>
+        </div>
+      )}
+
+      {tab === "mcp" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {mcpConns.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+              Nenhum cliente MCP conectado nas últimas 24h.
+              <br />
+              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
+                Rode o bootstrap para conectar: <code>claude mcp add --transport http second-brain-hub http://hub.fluxiom.com.br:8020/mcp</code>
+              </span>
+            </div>
+          ) : (
+            mcpConns.map((c, i) => <MCPConnCard key={i} c={c} />)
+          )}
         </div>
       )}
     </div>

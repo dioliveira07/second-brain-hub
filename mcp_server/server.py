@@ -311,12 +311,33 @@ async def run_stdio():
 
 # ── Modo HTTP centralizado ─────────────────────────────────────────────────────
 
+def _notify_connection(client_ip: str, client_name: str, machine: str) -> None:
+    """Notifica o hub sobre uma nova conexão MCP (best-effort)."""
+    try:
+        import urllib.request as urlreq
+        hub_url = os.environ.get("HUB_API_URL", DEFAULT_HUB_URL).rstrip("/")
+        payload = json.dumps({
+            "client_ip": client_ip,
+            "client_name": client_name,
+            "machine": machine,
+        }).encode()
+        req = urlreq.Request(
+            f"{hub_url}/api/cerebro/mcp/connect",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlreq.urlopen(req, timeout=3)
+    except Exception:
+        pass
+
+
 def run_http(port: int = 8020):
     import uvicorn
     from starlette.applications import Starlette
     from starlette.requests import Request
     from starlette.responses import Response
-    from starlette.routing import Mount, Route
+    from starlette.routing import Mount
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
     session_manager = StreamableHTTPSessionManager(
@@ -325,8 +346,46 @@ def run_http(port: int = 8020):
         stateless=False,
     )
 
-    async def handle_mcp(request: Request) -> Response:
-        return await session_manager.handle_request(request)
+    async def handle_mcp(scope, receive, send):
+        # ASGI callable — intercepta initialize para rastrear conexão
+        if scope.get("type") == "http" and scope.get("method") == "POST":
+            try:
+                # Lê o body uma vez
+                chunks = []
+                while True:
+                    msg = await receive()
+                    chunks.append(msg.get("body", b""))
+                    if not msg.get("more_body", False):
+                        break
+                body = b"".join(chunks)
+
+                data = json.loads(body)
+                if data.get("method") == "initialize":
+                    headers_raw = dict(scope.get("headers", []))
+                    fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
+                    client = scope.get("client") or ("unknown", 0)
+                    client_ip = fwd.split(",")[0].strip() if fwd else client[0]
+                    user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
+                    machine = headers_raw.get(b"x-machine", b"").decode()
+                    import threading
+                    threading.Thread(
+                        target=_notify_connection,
+                        args=(client_ip, user_agent, machine),
+                        daemon=True,
+                    ).start()
+
+                # Reconstrói receive com body já consumido
+                async def patched_receive():
+                    return {"type": "http.request", "body": body, "more_body": False}
+
+                request = Request(scope, patched_receive)
+            except Exception:
+                request = Request(scope, receive)
+        else:
+            request = Request(scope, receive)
+
+        response = await session_manager.handle_request(request)
+        await response(scope, receive, send)
 
     async def lifespan(app_):
         async with session_manager.run():
