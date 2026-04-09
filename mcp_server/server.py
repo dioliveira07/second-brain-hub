@@ -342,9 +342,10 @@ def run_http(port: int = 8020):
     from starlette.routing import Mount, Route
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-    # Token store em memória — persiste enquanto o container estiver vivo
+    # Token store em memória — persiste enquanto o container estiver vido
     _issued_tokens: set[str] = set()
-    _auth_codes: dict[str, str] = {}  # code → redirect_uri
+    _auth_codes: dict[str, str] = {}      # code → redirect_uri (completo)
+    _client_ips: dict[str, str] = {}      # client_id → IP do Claude Code
 
     BASE_URL = f"http://hub.fluxiom.com.br:{port}"
 
@@ -375,12 +376,16 @@ def run_http(port: int = 8020):
         })
 
     async def oauth_register(request: Request) -> JSONResponse:
-        """Dynamic client registration — aceita qualquer cliente."""
+        """Dynamic client registration — armazena IP do Claude Code."""
         try:
             body = await request.json()
         except Exception:
             body = {}
         client_id = secrets.token_urlsafe(16)
+        # IP real do processo Claude Code (não do browser)
+        client_ip = request.headers.get("x-forwarded-for", "")
+        client_ip = client_ip.split(",")[0].strip() if client_ip else (request.client.host if request.client else "")
+        _client_ips[client_id] = client_ip
         return JSONResponse({
             "client_id": client_id,
             "client_secret": "",
@@ -391,28 +396,51 @@ def run_http(port: int = 8020):
         }, status_code=201)
 
     async def oauth_authorize(request: Request) -> HTMLResponse:
-        """Auto-aprova imediatamente — redireciona sem interação do usuário."""
+        """Auto-aprova: faz relay server-side para o callback do Claude Code."""
         redirect_uri = request.query_params.get("redirect_uri", "")
         state = request.query_params.get("state", "")
-        code = secrets.token_urlsafe(24)
-        _auth_codes[code] = redirect_uri
+        client_id = request.query_params.get("client_id", "")
 
         if not redirect_uri:
             return HTMLResponse("<h1>Missing redirect_uri</h1>", status_code=400)
 
-        sep = "&" if "?" in redirect_uri else "?"
-        target = f"{redirect_uri}{sep}code={code}"
-        if state:
-            target += f"&state={urllib.parse.quote(state)}"
+        code = secrets.token_urlsafe(24)
+        _auth_codes[code] = redirect_uri
 
-        # Página que redireciona sozinha — sem nenhuma interação do usuário
+        # Monta URL de callback
+        sep = "&" if "?" in redirect_uri else "?"
+        callback_url = f"{redirect_uri}{sep}code={code}"
+        if state:
+            callback_url += f"&state={urllib.parse.quote(state)}"
+
+        # Relay: substitui localhost pelo IP real do Claude Code (que registrou o client_id)
+        claude_ip = _client_ips.get(client_id, "")
+        relay_ok = False
+        if claude_ip and "localhost" in redirect_uri:
+            relay_url = callback_url.replace("localhost", claude_ip)
+            try:
+                import urllib.request as urlreq
+                urlreq.urlopen(relay_url, timeout=5)
+                relay_ok = True
+            except Exception:
+                pass
+
+        if relay_ok:
+            return HTMLResponse("""<!DOCTYPE html>
+<html><head><title>Second Brain Hub</title></head>
+<body style="font-family:monospace;text-align:center;padding:3rem">
+<h2>✓ Autenticado com Second Brain Hub</h2>
+<p>Pode fechar esta janela.</p>
+</body></html>""")
+
+        # Fallback: redireciona o browser (funciona só se browser estiver na mesma máquina)
         return HTMLResponse(f"""<!DOCTYPE html>
 <html><head>
-<meta http-equiv="refresh" content="0;url={target}">
-<title>Second Brain Hub — Autenticando...</title>
+<meta http-equiv="refresh" content="0;url={callback_url}">
+<title>Second Brain Hub</title>
 </head><body>
-<p>Autenticando com Second Brain Hub...</p>
-<script>window.location.href = "{target}";</script>
+<p>Redirecionando...</p>
+<script>window.location.href = "{callback_url}";</script>
 </body></html>""")
 
     async def oauth_token(request: Request) -> JSONResponse:
