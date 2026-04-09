@@ -333,12 +333,20 @@ def _notify_connection(client_ip: str, client_name: str, machine: str) -> None:
 
 
 def run_http(port: int = 8020):
+    import secrets
+    import urllib.parse
     import uvicorn
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import Response
-    from starlette.routing import Mount
+    from starlette.responses import JSONResponse, RedirectResponse, HTMLResponse
+    from starlette.routing import Mount, Route
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    # Token store em memória — persiste enquanto o container estiver vivo
+    _issued_tokens: set[str] = set()
+    _auth_codes: dict[str, str] = {}  # code → redirect_uri
+
+    BASE_URL = f"http://hub.fluxiom.com.br:{port}"
 
     session_manager = StreamableHTTPSessionManager(
         app=app,
@@ -346,11 +354,81 @@ def run_http(port: int = 8020):
         stateless=False,
     )
 
+    # ── OAuth 2.1 mínimo ─────────────────────────────────────────────────────────
+
+    async def oauth_protected_resource(request: Request) -> JSONResponse:
+        return JSONResponse({
+            "resource": BASE_URL,
+            "authorization_servers": [BASE_URL],
+            "bearer_methods_supported": ["header"],
+        })
+
+    async def oauth_authorization_server(request: Request) -> JSONResponse:
+        return JSONResponse({
+            "issuer": BASE_URL,
+            "authorization_endpoint": f"{BASE_URL}/oauth/authorize",
+            "token_endpoint": f"{BASE_URL}/oauth/token",
+            "registration_endpoint": f"{BASE_URL}/oauth/register",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256", "plain"],
+        })
+
+    async def oauth_register(request: Request) -> JSONResponse:
+        """Dynamic client registration — aceita qualquer cliente."""
+        client_id = secrets.token_urlsafe(16)
+        return JSONResponse({
+            "client_id": client_id,
+            "client_secret": "",
+            "token_endpoint_auth_method": "none",
+        }, status_code=201)
+
+    async def oauth_authorize(request: Request) -> HTMLResponse:
+        """Auto-aprova imediatamente — redireciona sem interação do usuário."""
+        redirect_uri = request.query_params.get("redirect_uri", "")
+        state = request.query_params.get("state", "")
+        code = secrets.token_urlsafe(24)
+        _auth_codes[code] = redirect_uri
+
+        if not redirect_uri:
+            return HTMLResponse("<h1>Missing redirect_uri</h1>", status_code=400)
+
+        sep = "&" if "?" in redirect_uri else "?"
+        target = f"{redirect_uri}{sep}code={code}"
+        if state:
+            target += f"&state={urllib.parse.quote(state)}"
+
+        # Página que redireciona sozinha — sem nenhuma interação do usuário
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html><head>
+<meta http-equiv="refresh" content="0;url={target}">
+<title>Second Brain Hub — Autenticando...</title>
+</head><body>
+<p>Autenticando com Second Brain Hub...</p>
+<script>window.location.href = "{target}";</script>
+</body></html>""")
+
+    async def oauth_token(request: Request) -> JSONResponse:
+        """Troca code por token."""
+        form = await request.form()
+        code = form.get("code", "")
+        if code not in _auth_codes:
+            return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        del _auth_codes[code]
+        token = secrets.token_urlsafe(32)
+        _issued_tokens.add(token)
+        return JSONResponse({
+            "access_token": token,
+            "token_type": "bearer",
+            "expires_in": 86400 * 365,  # 1 ano
+        })
+
+    # ── Handler MCP ──────────────────────────────────────────────────────────────
+
     async def handle_mcp(scope, receive, send):
         """ASGI callable — intercepta initialize para rastrear conexão."""
         if scope.get("type") == "http" and scope.get("method") == "POST":
             try:
-                # Lê o body uma vez
                 chunks = []
                 while True:
                     msg = await receive()
@@ -377,7 +455,6 @@ def run_http(port: int = 8020):
                 except Exception:
                     pass
 
-                # Reconstrói receive com body já consumido
                 async def patched_receive():
                     return {"type": "http.request", "body": body, "more_body": False}
 
@@ -392,12 +469,19 @@ def run_http(port: int = 8020):
             yield
 
     starlette_app = Starlette(
-        routes=[Mount("/mcp", app=handle_mcp)],
+        routes=[
+            Route("/.well-known/oauth-protected-resource", oauth_protected_resource),
+            Route("/.well-known/oauth-authorization-server", oauth_authorization_server),
+            Route("/oauth/register", oauth_register, methods=["POST"]),
+            Route("/oauth/authorize", oauth_authorize, methods=["GET"]),
+            Route("/oauth/token", oauth_token, methods=["POST"]),
+            Mount("/mcp", app=handle_mcp),
+        ],
         lifespan=lifespan,
     )
 
     print(f"MCP Server HTTP rodando em http://0.0.0.0:{port}/mcp", flush=True)
-    uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="info")
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
