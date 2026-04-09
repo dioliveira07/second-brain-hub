@@ -505,6 +505,13 @@ def run_http(port: int = 8020):
     sse_transport = SseServerTransport("/sse/messages")
 
     async def handle_sse(request: Request):
+        # Rastreia conexão SSE (equivalente ao initialize do HTTP)
+        fwd = request.headers.get("x-forwarded-for", "")
+        client_ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+        user_agent = request.headers.get("user-agent", "")[:100]
+        machine = request.headers.get("x-machine", "")
+        import threading
+        threading.Thread(target=_notify_connection, args=(client_ip, user_agent, machine), daemon=True).start()
         async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
             await app.run(streams[0], streams[1], app.create_initialization_options())
 
