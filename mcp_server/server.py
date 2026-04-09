@@ -367,9 +367,9 @@ def run_http(port: int = 8020):
     async def oauth_authorization_server(request: Request) -> JSONResponse:
         return JSONResponse({
             "issuer": BASE_URL,
-            "authorization_endpoint": f"{BASE_URL}/oauth/authorize",
-            "token_endpoint": f"{BASE_URL}/oauth/token",
-            "registration_endpoint": f"{BASE_URL}/oauth/register",
+            "authorization_endpoint": f"{BASE_URL}/sbh-auth/authorize",
+            "token_endpoint": f"{BASE_URL}/sbh-auth/token",
+            "registration_endpoint": f"{BASE_URL}/sbh-auth/register",
             "response_types_supported": ["code"],
             "grant_types_supported": ["authorization_code"],
             "code_challenge_methods_supported": ["S256", "plain"],
@@ -517,9 +517,9 @@ def run_http(port: int = 8020):
             # OAuth (para --transport http)
             Route("/.well-known/oauth-protected-resource", oauth_protected_resource),
             Route("/.well-known/oauth-authorization-server", oauth_authorization_server),
-            Route("/oauth/register", oauth_register, methods=["POST"]),
-            Route("/oauth/authorize", oauth_authorize, methods=["GET"]),
-            Route("/oauth/token", oauth_token, methods=["POST"]),
+            Route("/sbh-auth/register", oauth_register, methods=["POST"]),
+            Route("/sbh-auth/authorize", oauth_authorize, methods=["GET"]),
+            Route("/sbh-auth/token", oauth_token, methods=["POST"]),
             # SSE transport (sem OAuth — para --transport sse)
             Route("/sse", handle_sse),
             Mount("/sse/messages", app=sse_transport.handle_post_message),
