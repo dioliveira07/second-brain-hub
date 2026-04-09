@@ -1,5 +1,14 @@
 const HUB_URL = process.env.HUB_API_URL || "http://host.docker.internal:8010";
 
+export async function cerebroFetch<T>(path: string): Promise<T> {
+  const res = await fetch(`${HUB_URL}/api/cerebro${path}`, {
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Cerebro API error: ${res.status} ${path}`);
+  return res.json();
+}
+
 // no-store por padrão — router.refresh() busca dados frescos em tempo real
 // passar revalidate: 60 apenas para dados caros (grafo)
 export async function hubFetch<T>(

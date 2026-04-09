@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Network, FolderGit2,
-  BookOpen, GitCommitHorizontal, Activity,
+  BookOpen, GitCommitHorizontal, Activity, Brain,
 } from "lucide-react";
 import { GlitchText } from "@/components/reactbits/GlitchText";
 
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/playbook", label: "Playbook",     Icon: BookOpen        },
   { href: "/timeline", label: "Timeline",     Icon: GitCommitHorizontal },
   { href: "/activity", label: "Atividade",    Icon: Activity        },
+  { href: "/cerebro",  label: "Cérebro",      Icon: Brain           },
 ];
 
 const C = {

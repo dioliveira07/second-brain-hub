@@ -1,0 +1,275 @@
+"use client";
+import { useState } from "react";
+import { Brain, Users, Clock, GitBranch, FileCode, Zap } from "lucide-react";
+import type { Sessao, AfinidadeItem } from "@/app/cerebro/page";
+
+const C = {
+  bg:      "rgba(10,22,40,0.6)",
+  border:  "#1a2840",
+  cyan:    "#06b6d4",
+  green:   "#22c55e",
+  yellow:  "#eab308",
+  purple:  "#a855f7",
+  text:    "#e2e8f0",
+  muted:   "#8ab4cc",
+  dim:     "#4a6a8a",
+  card:    "rgba(15,30,55,0.7)",
+  active:  "rgba(6,182,212,0.08)",
+};
+
+function timeAgo(mins: number): string {
+  if (mins < 60) return `${mins}min atrás`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h atrás`;
+  return `${Math.floor(h / 24)}d atrás`;
+}
+
+function devColor(dev: string): string {
+  const colors = [C.cyan, C.green, C.yellow, C.purple, "#f97316", "#ec4899"];
+  let hash = 0;
+  for (const c of dev) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function Avatar({ name }: { name: string }) {
+  const color = devColor(name);
+  const initials = name.slice(0, 2).toUpperCase();
+  return (
+    <div style={{
+      width: 28, height: 28, borderRadius: "50%",
+      background: `${color}22`, border: `1px solid ${color}66`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "var(--mono)", fontSize: "0.65rem", fontWeight: 700,
+      color, flexShrink: 0,
+    }}>
+      {initials}
+    </div>
+  );
+}
+
+function SessaoCard({ s }: { s: Sessao }) {
+  const isRecent = s.minutos_atras < 60;
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${isRecent ? C.cyan + "33" : C.border}`,
+      borderRadius: 8, padding: "0.9rem 1rem",
+      display: "flex", flexDirection: "column", gap: "0.5rem",
+      transition: "border-color 200ms",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+        <Avatar name={s.dev} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.82rem", fontWeight: 600, color: devColor(s.dev) }}>
+              {s.dev}
+            </span>
+            {isRecent && (
+              <span style={{
+                background: `${C.green}22`, border: `1px solid ${C.green}44`,
+                color: C.green, borderRadius: 4, padding: "0px 6px",
+                fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
+              }}>ATIVO</span>
+            )}
+          </div>
+          <div style={{ fontFamily: "var(--sans)", fontSize: "0.75rem", color: C.muted }}>
+            {s.projeto}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
+          <Clock size={11} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(s.minutos_atras)}</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+        {s.branch && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+            <GitBranch size={11} color={C.cyan} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.cyan }}>{s.branch}</span>
+          </div>
+        )}
+        {s.ultimo_commit && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+            <Zap size={11} color={C.yellow} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.yellow }}>
+              {s.ultimo_commit.slice(0, 40)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {s.arquivos && s.arquivos.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+          <FileCode size={11} color={C.dim} />
+          {s.arquivos.slice(0, 4).map((f, i) => (
+            <span key={i} style={{
+              background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`,
+              borderRadius: 4, padding: "0px 6px",
+              fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.muted,
+            }}>{f.split("/").pop()}</span>
+          ))}
+          {s.arquivos.length > 4 && (
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim }}>
+              +{s.arquivos.length - 4}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AfinidadeTable({ afinidade }: { afinidade: AfinidadeItem[] }) {
+  // Agrupa por dev
+  const devs = [...new Set(afinidade.map(a => a.dev))];
+  const projetos = [...new Set(afinidade.map(a => a.projeto))].slice(0, 12);
+  const scoreMap = new Map(afinidade.map(a => [`${a.dev}|${a.projeto}`, a.score]));
+  const maxScore = Math.max(...afinidade.map(a => a.score), 1);
+
+  if (devs.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+        Nenhum sinal de atividade registrado ainda.
+        <br />
+        <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Os dados aparecem após sessões de trabalho nos projetos.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--mono)", fontSize: "0.72rem" }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: "left", padding: "0.5rem 0.75rem", color: C.dim, borderBottom: `1px solid ${C.border}`, fontWeight: 400 }}>
+              Dev
+            </th>
+            {projetos.map(p => (
+              <th key={p} style={{
+                textAlign: "center", padding: "0.5rem 0.5rem",
+                color: C.muted, borderBottom: `1px solid ${C.border}`,
+                fontWeight: 400, maxWidth: 80, overflow: "hidden",
+              }}>
+                <span style={{ display: "block", transform: "rotate(-30deg)", transformOrigin: "bottom left", whiteSpace: "nowrap", marginLeft: 16 }}>
+                  {p.split("/")[1] ?? p}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {devs.map((dev, di) => (
+            <tr key={dev} style={{ background: di % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+              <td style={{ padding: "0.4rem 0.75rem", color: devColor(dev), borderBottom: `1px solid ${C.border}22`, whiteSpace: "nowrap" }}>
+                {dev}
+              </td>
+              {projetos.map(proj => {
+                const score = scoreMap.get(`${dev}|${proj}`) ?? 0;
+                const pct = score / maxScore;
+                return (
+                  <td key={proj} style={{ textAlign: "center", padding: "0.4rem 0.5rem", borderBottom: `1px solid ${C.border}22` }}>
+                    {score > 0 ? (
+                      <div style={{
+                        display: "inline-block",
+                        background: `rgba(6,182,212,${0.1 + pct * 0.7})`,
+                        border: `1px solid rgba(6,182,212,${0.2 + pct * 0.5})`,
+                        borderRadius: 4, padding: "2px 6px",
+                        color: `rgba(${pct > 0.5 ? "224,242,254" : "139,180,204"},1)`,
+                        minWidth: 32,
+                      }}>
+                        {score}
+                      </div>
+                    ) : (
+                      <span style={{ color: C.dim, opacity: 0.3 }}>—</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function CerebroClient({ sessoes, afinidade }: { sessoes: Sessao[]; afinidade: AfinidadeItem[] }) {
+  const [tab, setTab] = useState<"sessoes" | "afinidade">("sessoes");
+
+  const recentSessoes = sessoes.filter(s => s.minutos_atras < 60);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* Stats rápidas */}
+      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+        {[
+          { label: "Sessões registradas", value: sessoes.length, icon: <Brain size={14} />, color: C.cyan },
+          { label: "Devs ativos (1h)", value: recentSessoes.length, icon: <Users size={14} />, color: C.green },
+          { label: "Projetos com atividade", value: [...new Set(sessoes.map(s => s.projeto))].length, icon: <FileCode size={14} />, color: C.yellow },
+        ].map(({ label, value, icon, color }) => (
+          <div key={label} style={{
+            flex: "1 1 160px", background: C.card, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: "0.85rem 1rem",
+            display: "flex", alignItems: "center", gap: "0.75rem",
+          }}>
+            <div style={{ color, opacity: 0.8 }}>{icon}</div>
+            <div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "1.3rem", fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+              <div style={{ fontFamily: "var(--sans)", fontSize: "0.72rem", color: C.muted, marginTop: 3 }}>{label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: "0.25rem", borderBottom: `1px solid ${C.border}`, paddingBottom: "0" }}>
+        {(["sessoes", "afinidade"] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              background: tab === t ? C.active : "transparent",
+              border: "none", borderBottom: `2px solid ${tab === t ? C.cyan : "transparent"}`,
+              color: tab === t ? C.cyan : C.muted,
+              padding: "0.55rem 1rem", cursor: "pointer",
+              fontFamily: "var(--mono)", fontSize: "0.78rem",
+              letterSpacing: "0.05em", transition: "all 150ms",
+            }}
+          >
+            {t === "sessoes" ? "Sessões" : "Afinidade"}
+          </button>
+        ))}
+      </div>
+
+      {/* Conteúdo */}
+      {tab === "sessoes" && (
+        <div>
+          {sessoes.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+              Nenhuma sessão registrada ainda.
+              <br />
+              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Sessões aparecem quando devs usam Claude Code nos projetos.</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {sessoes.map((s, i) => <SessaoCard key={i} s={s} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "afinidade" && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Users size={13} color={C.cyan} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Afinidade dev × projeto (últimos 30 dias)</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>score ponderado por recência</span>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            <AfinidadeTable afinidade={afinidade} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

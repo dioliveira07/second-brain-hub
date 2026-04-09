@@ -101,6 +101,30 @@ async def get_contexto_projeto(projeto: str, db: AsyncSession = Depends(get_db))
     }
 
 
+@router.get("/sessoes")
+async def get_todas_sessoes(limit: int = 30, db: AsyncSession = Depends(get_db)):
+    """Retorna todas as sessões recentes de todos os devs e projetos."""
+    result = await db.execute(
+        select(SessionContext)
+        .order_by(SessionContext.timestamp.desc())
+        .limit(limit)
+    )
+    sessoes = result.scalars().all()
+    agora = datetime.now(timezone.utc)
+    return [
+        {
+            "dev": s.dev,
+            "projeto": s.projeto,
+            "branch": s.branch,
+            "arquivos": s.arquivos,
+            "ultimo_commit": s.ultimo_commit,
+            "minutos_atras": int((agora - s.timestamp).total_seconds() / 60),
+            "timestamp": s.timestamp.isoformat(),
+        }
+        for s in sessoes
+    ]
+
+
 @router.get("/projeto/{projeto}/sessoes")
 async def get_sessoes_projeto(projeto: str, limit: int = 10, db: AsyncSession = Depends(get_db)):
     """Retorna todas as sessões recentes do projeto (todos os devs)."""
