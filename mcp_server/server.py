@@ -350,8 +350,8 @@ def run_http(port: int = 8020):
 
     session_manager = StreamableHTTPSessionManager(
         app=app,
-        json_response=False,
-        stateless=False,
+        json_response=True,
+        stateless=True,
     )
 
     # ── OAuth 2.1 mínimo ─────────────────────────────────────────────────────────
