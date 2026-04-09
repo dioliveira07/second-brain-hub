@@ -273,22 +273,32 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
 
 @router.get("/ssh/identities")
 async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
-    """Lista todas as identidades SSH ativas (não expiradas)."""
+    """Lista devs ativos via SSH, agrupados por nome (sessões únicas por dev)."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(SSHIdentity)
         .where(SSHIdentity.expires_at > now)
-        .order_by(SSHIdentity.created_at.desc())
+        .order_by(SSHIdentity.expires_at.desc())
     )
     identities = result.scalars().all()
+
+    # Agrupa por dev: conta sessões e pega o expires_at mais longo
+    grouped: dict[str, dict] = {}
+    for i in identities:
+        if i.dev not in grouped:
+            grouped[i.dev] = {"dev": i.dev, "sessoes": 0, "expires_at": i.expires_at, "ssh_ip": i.ssh_ip}
+        grouped[i.dev]["sessoes"] += 1
+        if i.expires_at > grouped[i.dev]["expires_at"]:
+            grouped[i.dev]["expires_at"] = i.expires_at
+
     return [
         {
-            "dev": i.dev,
-            "ssh_ip": i.ssh_ip,
-            "ssh_port": i.ssh_port,
-            "expires_at": i.expires_at.isoformat(),
+            "dev": v["dev"],
+            "sessoes": v["sessoes"],
+            "ssh_ip": v["ssh_ip"],
+            "expires_at": v["expires_at"].isoformat(),
         }
-        for i in identities
+        for v in grouped.values()
     ]
 
 

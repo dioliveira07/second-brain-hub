@@ -30,8 +30,8 @@ export type MCPConn = {
 
 export type SSHIdentity = {
   dev: string;
+  sessoes: number;
   ssh_ip: string;
-  ssh_port: string;
   expires_at: string;
 };
 

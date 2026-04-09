@@ -252,9 +252,16 @@ function SSHIdentityCard({ id }: { id: SSHIdentity }) {
             color: C.green, borderRadius: 4, padding: "0px 6px",
             fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
           }}>ATIVO</span>
+          {id.sessoes > 1 && (
+            <span style={{
+              background: `${C.cyan}15`, border: `1px solid ${C.cyan}33`,
+              color: C.cyan, borderRadius: 4, padding: "0px 6px",
+              fontFamily: "var(--mono)", fontSize: "0.62rem",
+            }}>{id.sessoes} sessões</span>
+          )}
         </div>
         <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
-          {id.ssh_ip}:{id.ssh_port}
+          {id.ssh_ip}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
