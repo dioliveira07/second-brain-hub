@@ -347,7 +347,7 @@ def run_http(port: int = 8020):
     )
 
     async def handle_mcp(scope, receive, send):
-        # ASGI callable — intercepta initialize para rastrear conexão
+        """ASGI callable — intercepta initialize para rastrear conexão."""
         if scope.get("type") == "http" and scope.get("method") == "POST":
             try:
                 # Lê o body uma vez
@@ -359,58 +359,40 @@ def run_http(port: int = 8020):
                         break
                 body = b"".join(chunks)
 
-                data = json.loads(body)
-                if data.get("method") == "initialize":
-                    headers_raw = dict(scope.get("headers", []))
-                    fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
-                    client = scope.get("client") or ("unknown", 0)
-                    client_ip = fwd.split(",")[0].strip() if fwd else client[0]
-                    user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
-                    machine = headers_raw.get(b"x-machine", b"").decode()
-                    import threading
-                    threading.Thread(
-                        target=_notify_connection,
-                        args=(client_ip, user_agent, machine),
-                        daemon=True,
-                    ).start()
+                try:
+                    data = json.loads(body)
+                    if data.get("method") == "initialize":
+                        headers_raw = dict(scope.get("headers", []))
+                        fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
+                        client = scope.get("client") or ("unknown", 0)
+                        client_ip = fwd.split(",")[0].strip() if fwd else client[0]
+                        user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
+                        machine = headers_raw.get(b"x-machine", b"").decode()
+                        import threading
+                        threading.Thread(
+                            target=_notify_connection,
+                            args=(client_ip, user_agent, machine),
+                            daemon=True,
+                        ).start()
+                except Exception:
+                    pass
 
                 # Reconstrói receive com body já consumido
                 async def patched_receive():
                     return {"type": "http.request", "body": body, "more_body": False}
 
-                request = Request(scope, patched_receive)
+                await session_manager.handle_request(scope, patched_receive, send)
             except Exception:
-                request = Request(scope, receive)
+                await session_manager.handle_request(scope, receive, send)
         else:
-            request = Request(scope, receive)
-
-        response = await session_manager.handle_request(request)
-        await response(scope, receive, send)
-
-    from starlette.responses import JSONResponse
-    from starlette.routing import Route
-
-    # OAuth discovery endpoints — informam ao Claude Code que não há autenticação
-    async def oauth_protected_resource(request: Request) -> JSONResponse:
-        base = f"http://{request.headers.get('host', f'hub.fluxiom.com.br:{port}')}"
-        return JSONResponse({
-            "resource": base,
-            "authorization_servers": [],
-        })
-
-    async def oauth_authorization_server(request: Request) -> JSONResponse:
-        return JSONResponse({}, status_code=404)
+            await session_manager.handle_request(scope, receive, send)
 
     async def lifespan(app_):
         async with session_manager.run():
             yield
 
     starlette_app = Starlette(
-        routes=[
-            Route("/.well-known/oauth-protected-resource", oauth_protected_resource),
-            Route("/.well-known/oauth-authorization-server", oauth_authorization_server),
-            Mount("/mcp", app=handle_mcp),
-        ],
+        routes=[Mount("/mcp", app=handle_mcp)],
         lifespan=lifespan,
     )
 
