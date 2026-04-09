@@ -387,12 +387,30 @@ def run_http(port: int = 8020):
         response = await session_manager.handle_request(request)
         await response(scope, receive, send)
 
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    # OAuth discovery endpoints — informam ao Claude Code que não há autenticação
+    async def oauth_protected_resource(request: Request) -> JSONResponse:
+        base = f"http://{request.headers.get('host', f'hub.fluxiom.com.br:{port}')}"
+        return JSONResponse({
+            "resource": base,
+            "authorization_servers": [],
+        })
+
+    async def oauth_authorization_server(request: Request) -> JSONResponse:
+        return JSONResponse({}, status_code=404)
+
     async def lifespan(app_):
         async with session_manager.run():
             yield
 
     starlette_app = Starlette(
-        routes=[Mount("/mcp", app=handle_mcp)],
+        routes=[
+            Route("/.well-known/oauth-protected-resource", oauth_protected_resource),
+            Route("/.well-known/oauth-authorization-server", oauth_authorization_server),
+            Mount("/mcp", app=handle_mcp),
+        ],
         lifespan=lifespan,
     )
 
