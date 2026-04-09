@@ -60,16 +60,17 @@ async def index_repo(github_full_name: str, db: AsyncSession, changed_files: lis
     all_chunks = []
     files_processed = 0
 
+    from qdrant_client.models import Filter, FieldCondition, MatchAny, MatchValue, FilterSelector
+
     # Normaliza os paths alterados para comparação
     changed_set = {cf.lstrip("/") for cf in changed_files} if changed_files else None
 
     key_files_to_process = analysis["key_files"]
     if changed_set:
+        # Incremental: processa só os arquivos alterados e limpa seus pontos antigos
         key_files_to_process = [kf for kf in analysis["key_files"] if kf["path"] in changed_set]
 
         if key_files_to_process:
-            # Remove pontos antigos desses arquivos do Qdrant antes de reinserir
-            from qdrant_client.models import Filter, FieldCondition, MatchAny, MatchValue, FilterSelector
             paths_to_delete = [kf["path"] for kf in key_files_to_process]
             qdrant_client.delete(
                 collection_name="company_knowledge",
@@ -82,6 +83,16 @@ async def index_repo(github_full_name: str, db: AsyncSession, changed_files: lis
                     )
                 ),
             )
+    else:
+        # Full index: limpa TODOS os pontos do repo antes de reinserir — evita duplicatas
+        qdrant_client.delete(
+            collection_name="company_knowledge",
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key="repo", match=MatchValue(value=github_full_name))]
+                )
+            ),
+        )
 
     for kf in key_files_to_process:
         file_path = Path(repo_path) / kf["path"]
@@ -123,7 +134,7 @@ async def index_repo(github_full_name: str, db: AsyncSession, changed_files: lis
 
             # Pausa entre batches para não monopolizar a CPU da VPS
             if i + EMBED_BATCH < len(all_chunks):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)
 
     # 7. Finaliza
     duration_ms = int((time.time() - start) * 1000)

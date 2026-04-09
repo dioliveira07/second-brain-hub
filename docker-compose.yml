@@ -37,10 +37,11 @@ services:
       - git-mirrors:/data/repos
     environment:
       # Limita threads do modelo de embeddings (sentence-transformers/torch/numpy)
-      OMP_NUM_THREADS: "2"
-      MKL_NUM_THREADS: "2"
-      OPENBLAS_NUM_THREADS: "2"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
       TOKENIZERS_PARALLELISM: "false"
+    cpu_quota: 60000   # 60% de 1 core (cpu_period padrão = 100000 = 100ms)
     command: nice -n 15 celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
 
   celery-beat:
