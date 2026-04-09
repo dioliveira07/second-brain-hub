@@ -15,7 +15,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal, MCPConnection
+from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity
 
 router = APIRouter()
 
@@ -233,6 +233,59 @@ async def get_afinidade_projeto(projeto: str, dias: int = 30, db: AsyncSession =
         reverse=True,
     )
     return {"projeto": projeto, "dias": dias, "ranking": ranking}
+
+
+# ── SSH Identity ───────────────────────────────────────────────────────────────
+
+class SSHIdentityPayload(BaseModel):
+    ssh_ip: str
+    ssh_port: str
+    dev: str
+
+
+@router.post("/ssh/identity")
+async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = Depends(get_db)):
+    """Salva (upsert) identidade dev para esta sessão SSH."""
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
+
+    result = await db.execute(
+        select(SSHIdentity).where(
+            SSHIdentity.ssh_ip == payload.ssh_ip,
+            SSHIdentity.ssh_port == payload.ssh_port,
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.dev = payload.dev
+        existing.expires_at = expires_at
+    else:
+        db.add(SSHIdentity(
+            ssh_ip=payload.ssh_ip,
+            ssh_port=payload.ssh_port,
+            dev=payload.dev,
+            expires_at=expires_at,
+        ))
+
+    await db.commit()
+    return {"status": "ok", "expires_at": expires_at.isoformat()}
+
+
+@router.get("/ssh/identity")
+async def get_ssh_identity(ip: str, port: str, db: AsyncSession = Depends(get_db)):
+    """Retorna o dev identificado para esta sessão SSH (se não expirado)."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(SSHIdentity).where(
+            SSHIdentity.ssh_ip == ip,
+            SSHIdentity.ssh_port == port,
+            SSHIdentity.expires_at > now,
+        )
+    )
+    identity = result.scalar_one_or_none()
+    if not identity:
+        return {"dev": None}
+    return {"dev": identity.dev, "expires_at": identity.expires_at.isoformat()}
 
 
 # ── MCP Connections ────────────────────────────────────────────────────────────

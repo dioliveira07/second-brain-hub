@@ -115,6 +115,18 @@ class DevSignal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class SSHIdentity(Base):
+    """Identidade de dev por sessão SSH (ip + source_port → dev, TTL 8h)."""
+    __tablename__ = "ssh_identities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ssh_ip: Mapped[str] = mapped_column(String(64), nullable=False)
+    ssh_port: Mapped[str] = mapped_column(String(10), nullable=False)
+    dev: Mapped[str] = mapped_column(String(100), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class MCPConnection(Base):
     """Rastreamento de clientes conectados ao MCP server HTTP centralizado."""
     __tablename__ = "mcp_connections"
