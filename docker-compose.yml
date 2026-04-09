@@ -89,6 +89,20 @@ services:
       timeout: 5s
       retries: 3
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      HUB_API_URL: http://hub-api:8000
+    ports:
+      - "8020:8020"
+    depends_on:
+      - hub-api
+    command: python3 /app/mcp_server/server.py --http --port 8020
+    restart: unless-stopped
+
   dashboard:
     build:
       context: .
