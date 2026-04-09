@@ -376,11 +376,18 @@ def run_http(port: int = 8020):
 
     async def oauth_register(request: Request) -> JSONResponse:
         """Dynamic client registration — aceita qualquer cliente."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
         client_id = secrets.token_urlsafe(16)
         return JSONResponse({
             "client_id": client_id,
             "client_secret": "",
             "token_endpoint_auth_method": "none",
+            "redirect_uris": body.get("redirect_uris", []),
+            "grant_types": body.get("grant_types", ["authorization_code"]),
+            "response_types": body.get("response_types", ["code"]),
         }, status_code=201)
 
     async def oauth_authorize(request: Request) -> HTMLResponse:
