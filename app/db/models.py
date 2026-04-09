@@ -85,3 +85,31 @@ class Notification(Base):
     extra_data: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class SessionContext(Base):
+    """F6 — Continuidade entre devs. Snapshot da última sessão por dev+projeto."""
+    __tablename__ = "session_contexts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dev: Mapped[str] = mapped_column(String(100), nullable=False)
+    projeto: Mapped[str] = mapped_column(String(255), nullable=False)
+    branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    arquivos: Mapped[list] = mapped_column(JSONB, default=list)
+    ultimo_commit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class DevSignal(Base):
+    """F2/F3 — Sinais de atividade dos devs (erros, edições, skills usadas)."""
+    __tablename__ = "dev_signals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tipo: Mapped[str] = mapped_column(String(50), nullable=False)   # erro_bash | arquivo_editado | skill_usada
+    dev: Mapped[str] = mapped_column(String(100), nullable=False)
+    projeto: Mapped[str] = mapped_column(String(255), nullable=False)
+    dados: Mapped[dict] = mapped_column(JSONB, default=dict)         # payload específico por tipo
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

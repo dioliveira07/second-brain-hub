@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
-from app.api import health, indexing, search, repos, webhooks, auth, notifications, graph, stats
+from app.api import health, indexing, search, repos, webhooks, auth, notifications, graph, stats, cerebro
 from app.core.config import settings
 from app.db.session import init_db
 from app.services.qdrant import init_collections
@@ -33,3 +33,4 @@ app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"]
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(graph.router, prefix="/api/v1/graph", tags=["graph"])
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])
+app.include_router(cerebro.router, prefix="/api/cerebro", tags=["cerebro"])
