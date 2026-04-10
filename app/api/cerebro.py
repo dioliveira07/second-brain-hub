@@ -446,7 +446,7 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "connected_at": c.connected_at.isoformat(),
             "last_seen_at": c.last_seen_at.isoformat(),
             "minutos_atras": int((agora - c.last_seen_at).total_seconds() / 60),
-            "ativo": (agora - c.last_seen_at).total_seconds() < 3600,
+            "ativo": (agora - c.last_seen_at).total_seconds() < 28800,  # 8h
         }
         for c in conns
     ]
