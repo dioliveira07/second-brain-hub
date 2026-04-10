@@ -12,17 +12,17 @@ from app.services import embeddings
 
 
 async def cleanup_sessions():
-    """Remove sessões expiradas e ghosts (sem dados) do banco."""
-    from app.db.models import SSHIdentity
+    """Remove sessões expiradas, ghosts e MCPs inativos do banco."""
+    from app.db.models import SSHIdentity, MCPConnection
     while True:
         try:
             async with async_session() as db:
                 now = datetime.now(timezone.utc)
-                # 1) Sessões expiradas
+                # 1) Sessões SSH/dev expiradas
                 await db.execute(
                     delete(SSHIdentity).where(SSHIdentity.expires_at <= now)
                 )
-                # 2) Ghosts: sem machine_hostname E sem projeto, criadas há mais de 1h
+                # 2) Ghosts: sem machine_hostname E sem projeto, com mais de 1h
                 ghost_cutoff = now - timedelta(hours=1)
                 await db.execute(
                     delete(SSHIdentity).where(
@@ -30,6 +30,11 @@ async def cleanup_sessions():
                         SSHIdentity.projeto.is_(None),
                         SSHIdentity.updated_at <= ghost_cutoff,
                     )
+                )
+                # 3) Conexões MCP não vistas há mais de 24h
+                mcp_cutoff = now - timedelta(hours=24)
+                await db.execute(
+                    delete(MCPConnection).where(MCPConnection.last_seen_at <= mcp_cutoff)
                 )
                 await db.commit()
         except Exception:
