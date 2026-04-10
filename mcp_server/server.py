@@ -311,36 +311,6 @@ async def run_stdio():
 
 # ── Modo HTTP centralizado ─────────────────────────────────────────────────────
 
-_heartbeat_last: dict[str, float] = {}   # client_ip → timestamp último heartbeat
-_HEARTBEAT_COOLDOWN = 300                 # 5 minutos entre heartbeats por cliente
-
-def _notify_connection(client_ip: str, client_name: str, machine: str) -> None:
-    """Notifica o hub sobre conexão MCP (best-effort). Usado no initialize e como heartbeat."""
-    import time
-    now = time.time()
-    last = _heartbeat_last.get(client_ip, 0)
-    if now - last < _HEARTBEAT_COOLDOWN:
-        return
-    _heartbeat_last[client_ip] = now
-    try:
-        import urllib.request as urlreq
-        hub_url = os.environ.get("HUB_API_URL", DEFAULT_HUB_URL).rstrip("/")
-        payload = json.dumps({
-            "client_ip": client_ip,
-            "client_name": client_name,
-            "machine": machine,
-        }).encode()
-        req = urlreq.Request(
-            f"{hub_url}/api/cerebro/mcp/connect",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urlreq.urlopen(req, timeout=3)
-    except Exception:
-        pass
-
-
 def run_http(port: int = 8020):
     import secrets
     import urllib.parse
@@ -470,43 +440,8 @@ def run_http(port: int = 8020):
     # ── Handler MCP ──────────────────────────────────────────────────────────────
 
     async def handle_mcp(scope, receive, send):
-        """ASGI callable — intercepta initialize para rastrear conexão."""
-        if scope.get("type") == "http" and scope.get("method") == "POST":
-            try:
-                chunks = []
-                while True:
-                    msg = await receive()
-                    chunks.append(msg.get("body", b""))
-                    if not msg.get("more_body", False):
-                        break
-                body = b"".join(chunks)
-
-                try:
-                    data = json.loads(body)
-                    headers_raw = dict(scope.get("headers", []))
-                    fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
-                    client = scope.get("client") or ("unknown", 0)
-                    client_ip = fwd.split(",")[0].strip() if fwd else client[0]
-                    user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
-                    machine = headers_raw.get(b"x-machine", b"").decode()
-                    # Heartbeat a cada request MCP (cooldown 5min por cliente em memória)
-                    import threading
-                    threading.Thread(
-                        target=_notify_connection,
-                        args=(client_ip, user_agent, machine),
-                        daemon=True,
-                    ).start()
-                except Exception:
-                    pass
-
-                async def patched_receive():
-                    return {"type": "http.request", "body": body, "more_body": False}
-
-                await session_manager.handle_request(scope, patched_receive, send)
-            except Exception:
-                await session_manager.handle_request(scope, receive, send)
-        else:
-            await session_manager.handle_request(scope, receive, send)
+        """ASGI callable — passa requests direto para o session manager."""
+        await session_manager.handle_request(scope, receive, send)
 
     # ── SSE transport (sem OAuth) ─────────────────────────────────────────────────
     from mcp.server.sse import SseServerTransport
@@ -514,13 +449,6 @@ def run_http(port: int = 8020):
     sse_transport = SseServerTransport("/sse/messages")
 
     async def handle_sse(request: Request):
-        # Rastreia conexão SSE (equivalente ao initialize do HTTP)
-        fwd = request.headers.get("x-forwarded-for", "")
-        client_ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
-        user_agent = request.headers.get("user-agent", "")[:100]
-        machine = request.headers.get("x-machine", "")
-        import threading
-        threading.Thread(target=_notify_connection, args=(client_ip, user_agent, machine), daemon=True).start()
         async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
             await app.run(streams[0], streams[1], app.create_initialization_options())
 
