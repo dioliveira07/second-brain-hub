@@ -505,7 +505,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns, sshIdentities }: {
           { label: "Devs ativos (1h)", value: recentSessoes.length, icon: <Users size={14} />, color: C.green },
           { label: "Projetos com atividade", value: [...new Set(sessoes.map(s => s.projeto))].length, icon: <FileCode size={14} />, color: C.yellow },
           { label: "Clientes MCP", value: activeMCP.length, icon: <Wifi size={14} />, color: C.purple },
-          { label: "Devs via SSH", value: sshIdentities.length, icon: <Terminal size={14} />, color: C.green },
+          { label: "Devs identificados", value: sshIdentities.length, icon: <Terminal size={14} />, color: C.green },
         ].map(({ label, value, icon, color }) => (
           <div key={label} style={{
             flex: "1 1 160px", background: C.card, border: `1px solid ${C.border}`,
@@ -536,7 +536,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns, sshIdentities }: {
               letterSpacing: "0.05em", transition: "all 150ms",
             }}
           >
-            {t === "sessoes" ? "Sessões" : t === "afinidade" ? "Afinidade" : t === "mcp" ? `MCP (${activeMCP.length})` : `SSH (${sshIdentities.length})`}
+            {t === "sessoes" ? "Sessões" : t === "afinidade" ? "Afinidade" : t === "mcp" ? `MCP (${activeMCP.length})` : `Devs (${sshIdentities.length})`}
           </button>
         ))}
       </div>
@@ -591,9 +591,9 @@ export function CerebroClient({ sessoes, afinidade, mcpConns, sshIdentities }: {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
           {sshIdentities.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum dev identificado via SSH no momento.
+              Nenhum dev identificado no momento.
               <br />
-              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/s sbh-auth seu-nome</code> para se identificar.</span>
+              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/eu seu-nome</code> para se identificar.</span>
             </div>
           ) : (
             sshIdentities.map((id, i) => <SSHIdentityCard key={i} id={id} />)
