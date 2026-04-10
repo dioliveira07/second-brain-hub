@@ -75,6 +75,24 @@ export type PadraoGlobal = {
   ocorrencias: number;
 };
 
+export type ScorecardDev = {
+  dev: string;
+  commits: number;
+  edits: number;
+  errors: number;
+  skills: number;
+  sessoes: number;
+  projetos: string[];
+  score: number;
+};
+
+export type Conflito = {
+  projeto: string;
+  arquivo: string;
+  devs: string[];
+  ultima_edicao: string;
+};
+
 export default async function CerebroPage() {
   let sessoes: Sessao[] = [];
   let afinidade: AfinidadeItem[] = [];
@@ -82,6 +100,8 @@ export default async function CerebroPage() {
   let sshIdentities: SSHIdentity[] = [];
   let sinais: Sinal[] = [];
   let padroes: PadraoGlobal[] = [];
+  let scorecard: ScorecardDev[] = [];
+  let conflitos: Conflito[] = [];
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -109,6 +129,16 @@ export default async function CerebroPage() {
     padroes = p.padroes ?? [];
   } catch {}
 
+  try {
+    const sc = await cerebroFetch<{ devs: ScorecardDev[] }>("/scorecard?dias=7");
+    scorecard = sc.devs ?? [];
+  } catch {}
+
+  try {
+    const cf = await cerebroFetch<{ conflitos: Conflito[] }>("/conflitos?horas=24");
+    conflitos = cf.conflitos ?? [];
+  } catch {}
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem", maxWidth: 1100 }}>
       <FadeIn delay={0}>
@@ -130,6 +160,8 @@ export default async function CerebroPage() {
         sshIdentities={sshIdentities}
         sinais={sinais}
         padroes={padroes}
+        scorecard={scorecard}
+        conflitos={conflitos}
       />
     </div>
   );

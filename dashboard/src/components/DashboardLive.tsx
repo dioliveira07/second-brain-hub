@@ -2,17 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Database, Cpu, GitMerge, Bell, Circle, ChevronRight } from "lucide-react";
+import { Database, Cpu, GitMerge, Bell, Circle, ChevronRight, AlertTriangle, GitBranch } from "lucide-react";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
 import { CountUp }       from "@/components/reactbits/CountUp";
 import type { StatsOverview, Repo } from "@/lib/hub";
 
+type ProjetoAbandono = {
+  projeto: string;
+  nome: string;
+  uncommitted: number;
+  branch: string;
+  ultimo_commit: string;
+};
+
 interface Props {
   initialStats: StatsOverview;
   initialRepos: Repo[];
+  projetos_abandono?: ProjetoAbandono[];
 }
 
-export function DashboardLive({ initialStats, initialRepos }: Props) {
+export function DashboardLive({ initialStats, initialRepos, projetos_abandono = [] }: Props) {
   const [stats, setStats] = useState(initialStats);
   const [repos, setRepos] = useState(initialRepos);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,6 +159,52 @@ export function DashboardLive({ initialStats, initialRepos }: Props) {
           </div>
         )}
       </div>
+
+      {/* Projetos em abandono */}
+      {projetos_abandono.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <AlertTriangle size={13} color="var(--amber)" />
+            <div className="label-accent" style={{ color: "var(--amber)" }}>Trabalho Pendente</div>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", marginLeft: "auto" }}>
+              sem atividade nos últimos 3 dias
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.5rem" }}>
+            {projetos_abandono.map((p) => (
+              <div key={p.projeto} style={{
+                display: "flex", flexDirection: "column", gap: "0.3rem",
+                padding: "0.7rem 1rem", borderRadius: "var(--r)",
+                background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.2)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", fontWeight: 600, color: "var(--text)", flex: 1 }}>
+                    {p.nome}
+                  </span>
+                  <span style={{
+                    background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)",
+                    color: "var(--amber)", borderRadius: 4, padding: "0px 6px",
+                    fontFamily: "var(--mono)", fontSize: "0.65rem",
+                  }}>
+                    {p.uncommitted} não commitados
+                  </span>
+                </div>
+                {p.branch && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                    <GitBranch size={10} color="var(--muted-foreground)" />
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)" }}>{p.branch}</span>
+                  </div>
+                )}
+                {p.ultimo_commit && (
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: "var(--muted-foreground)", opacity: 0.7 }}>
+                    {p.ultimo_commit.split("(")[0].slice(0, 50)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }

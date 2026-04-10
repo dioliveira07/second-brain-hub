@@ -1,6 +1,10 @@
-import { hubFetch, StatsOverview, Repo } from "@/lib/hub";
+import { hubFetch, cerebroFetch, StatsOverview, Repo } from "@/lib/hub";
 import { FadeIn } from "@/components/reactbits/FadeIn";
 import { DashboardLive } from "@/components/DashboardLive";
+
+type ProjetoAbandono = {
+  projeto: string; nome: string; uncommitted: number; branch: string; ultimo_commit: string;
+};
 
 export default async function HomePage() {
   let stats: StatsOverview = {
@@ -8,12 +12,18 @@ export default async function HomePage() {
     decisions_captured: 0, notifications_unread: 0,
   };
   let repos: Repo[] = [];
+  let abandono: ProjetoAbandono[] = [];
 
   try {
     [stats, repos] = await Promise.all([
       hubFetch<StatsOverview>("/stats/overview"),
       hubFetch<Repo[]>("/repos"),
     ]);
+  } catch {}
+
+  try {
+    const ab = await cerebroFetch<{ projetos: ProjetoAbandono[] }>("/projetos/abandono?dias_inativo=3&min_uncommitted=3");
+    abandono = ab.projetos ?? [];
   } catch {}
 
   return (
@@ -32,7 +42,7 @@ export default async function HomePage() {
         </div>
       </FadeIn>
 
-      <DashboardLive initialStats={stats} initialRepos={repos} />
+      <DashboardLive initialStats={stats} initialRepos={repos} projetos_abandono={abandono} />
     </div>
   );
 }

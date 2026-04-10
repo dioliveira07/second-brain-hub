@@ -16,6 +16,7 @@ const NAV = [
   { href: "/activity", label: "Atividade",    Icon: Activity        },
   { href: "/cerebro",  label: "Cérebro",      Icon: Brain           },
   { href: "/digest",   label: "Digest",       Icon: Newspaper       },
+  { href: "/projeto",  label: "Projeto",      Icon: GitCommitHorizontal },
 ];
 
 const C = {

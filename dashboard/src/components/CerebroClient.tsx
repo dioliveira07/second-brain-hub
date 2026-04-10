@@ -5,7 +5,7 @@ import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
   ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu,
 } from "lucide-react";
-import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal } from "@/app/cerebro/page";
+import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -108,6 +108,21 @@ function StatusLine({ s }: { s: Pick<SSHSession, "ctx_pct" | "tokens_total" | "t
 
 // ── Ops Board ─────────────────────────────────────────────────────────────────
 
+function CtxSemaforo({ pct }: { pct: number | null }) {
+  if (pct == null) return null;
+  const color = pct > 80 ? C.red : pct > 60 ? C.yellow : C.green;
+  const pulse = pct > 80;
+  return (
+    <div style={{
+      width: 10, height: 10, borderRadius: "50%",
+      background: color,
+      boxShadow: `0 0 ${pulse ? "8px" : "4px"} ${color}`,
+      flexShrink: 0,
+      animation: pulse ? "pulse-glow 1.2s ease-in-out infinite" : undefined,
+    }} title={`ctx ${pct}%`} />
+  );
+}
+
 function OpsCard({ identity, sessao }: { identity: SSHIdentity; sessao: Sessao | undefined }) {
   const [expanded, setExpanded] = useState(false);
   const expiresDate = new Date(identity.expires_at);
@@ -130,6 +145,7 @@ function OpsCard({ identity, sessao }: { identity: SSHIdentity; sessao: Sessao |
         onClick={() => setExpanded(e => !e)}
         style={{ padding: "0.85rem 1rem", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: "0.75rem", userSelect: "none" }}
       >
+        <CtxSemaforo pct={identity.ctx_pct} />
         <Terminal size={14} color={C.green} style={{ flexShrink: 0, marginTop: 3 }} />
         <Avatar name={identity.dev} size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -506,12 +522,184 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
   );
 }
 
+// ── Devs (SSH Identities) ─────────────────────────────────────────────────────
+
+function SSHIdentityCard({ id }: { id: SSHIdentity }) {
+  const [expanded, setExpanded] = useState(false);
+  const expiresDate = new Date(id.expires_at);
+  const minutesLeft = Math.round((expiresDate.getTime() - Date.now()) / 60000);
+  const hoursLeft = Math.floor(minutesLeft / 60);
+  const timeLeft = hoursLeft > 0 ? `${hoursLeft}h restantes` : `${minutesLeft}min restantes`;
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.green}33`, borderRadius: 8, overflow: "hidden" }}>
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{ padding: "0.75rem 1rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.75rem", userSelect: "none" }}
+      >
+        <Terminal size={14} color={C.green} style={{ flexShrink: 0 }} />
+        <Avatar name={id.dev} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: devColor(id.dev) }}>{id.dev}</span>
+            <span style={{ background: `${C.green}22`, border: `1px solid ${C.green}44`, color: C.green, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em" }}>ATIVO</span>
+            {id.sessoes > 1 && (
+              <span style={{ background: `${C.cyan}15`, border: `1px solid ${C.cyan}33`, color: C.cyan, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>{id.sessoes} sessões</span>
+            )}
+          </div>
+          <StatusLine s={id} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim }}>
+            <Clock size={11} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeLeft}</span>
+          </div>
+          <div style={{ width: 20, height: 20, borderRadius: 4, background: expanded ? `${C.cyan}22` : "rgba(255,255,255,0.05)", border: `1px solid ${expanded ? C.cyan + "55" : "rgba(255,255,255,0.1)"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {expanded ? <ChevronDown size={11} color={C.cyan} /> : <ChevronRight size={11} color={C.muted} />}
+          </div>
+        </div>
+      </div>
+
+      {expanded && id.sessions.length > 0 && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.5rem", background: "rgba(0,0,0,0.15)" }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, letterSpacing: "0.08em", marginBottom: "0.15rem" }}>
+            SESSÕES ATIVAS ({id.sessions.length})
+          </div>
+          {id.sessions.map((s, i) => (
+            <div key={i} style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, borderRadius: 6, padding: "0.6rem 0.85rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.muted }}>{s.ssh_ip}:{s.ssh_port}</span>
+                {s.machine_hostname ? (
+                  <><span style={{ color: C.dim, fontSize: "0.65rem" }}>→</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.purple }}>{s.machine_hostname}</span></>
+                ) : (
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim }}>→ ?</span>
+                )}
+                {s.projeto && <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.cyan }}>{s.projeto}</span>}
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, marginLeft: "auto" }}>
+                  {s.updated_at ? new Date(s.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "sem dados"}
+                </span>
+              </div>
+              <StatusLine s={s} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Scorecard ─────────────────────────────────────────────────────────────────
+
+function ScorecardTable({ devs }: { devs: ScorecardDev[] }) {
+  if (devs.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+        Nenhuma atividade registrada nos últimos 7 dias.
+      </div>
+    );
+  }
+  const maxScore = Math.max(...devs.map(d => d.score), 1);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem" }}>
+      {devs.map((dev, i) => {
+        const color = devColor(dev.dev);
+        const pct = dev.score / maxScore;
+        return (
+          <div key={i} style={{
+            background: C.card, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: "0.75rem 1rem",
+            borderLeft: `3px solid ${color}`,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.5rem" }}>
+              <Avatar name={dev.dev} size={26} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 700, color, flex: 1 }}>{dev.dev}</span>
+              <div style={{ width: 100, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct * 100}%`, background: color, borderRadius: 2 }} />
+              </div>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, minWidth: 40, textAlign: "right" }}>
+                {dev.score}pts
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {[
+                { label: "commits", value: dev.commits, color: C.green,  icon: <GitCommit size={10} /> },
+                { label: "edições", value: dev.edits,   color: C.cyan,   icon: <Edit3 size={10} /> },
+                { label: "erros",   value: dev.errors,  color: C.red,    icon: <AlertTriangle size={10} /> },
+                { label: "skills",  value: dev.skills,  color: C.purple, icon: <Cpu size={10} /> },
+                { label: "sessões", value: dev.sessoes, color: C.muted,  icon: <Brain size={10} /> },
+              ].map(({ label, value, color: c, icon }) => (
+                <div key={label} style={{
+                  display: "flex", alignItems: "center", gap: "0.25rem",
+                  background: `${c}10`, border: `1px solid ${c}25`,
+                  borderRadius: 5, padding: "2px 7px",
+                }}>
+                  <span style={{ color: c }}>{icon}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", fontWeight: 600, color: c }}>{value}</span>
+                  <span style={{ fontFamily: "var(--sans)", fontSize: "0.65rem", color: C.dim }}>{label}</span>
+                </div>
+              ))}
+              {dev.projetos.length > 0 && (
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, alignSelf: "center" }}>
+                  {dev.projetos.join(", ")}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Conflitos ─────────────────────────────────────────────────────────────────
+
+function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
+  if (conflitos.length === 0) return null;
+  return (
+    <div style={{
+      background: "rgba(239,68,68,0.05)", border: `1px solid rgba(239,68,68,0.2)`,
+      borderRadius: 8, overflow: "hidden", marginBottom: "0.5rem",
+    }}>
+      <div style={{ padding: "0.65rem 1rem", borderBottom: `1px solid rgba(239,68,68,0.15)`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <AlertTriangle size={13} color={C.red} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: C.red, fontWeight: 600 }}>
+          {conflitos.length} conflito{conflitos.length > 1 ? "s" : ""} potencial{conflitos.length > 1 ? "is" : ""}
+        </span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim, marginLeft: "auto" }}>
+          últimas 24h, sem commit entre devs
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+        {conflitos.slice(0, 5).map((c, i) => (
+          <div key={i} style={{ padding: "0.55rem 1rem", borderBottom: i < conflitos.length - 1 ? `1px solid rgba(239,68,68,0.08)` : "none", display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+            <FileCode size={11} color={C.red} style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {c.arquivo.split("/").slice(-2).join("/")}
+            </span>
+            <div style={{ display: "flex", gap: "0.3rem" }}>
+              {c.devs.map(dev => (
+                <span key={dev} style={{ background: `${devColor(dev)}15`, border: `1px solid ${devColor(dev)}33`, color: devColor(dev), borderRadius: 4, padding: "0px 5px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>
+                  {dev}
+                </span>
+              ))}
+            </div>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim, flexShrink: 0 }}>
+              {c.projeto.split("/").pop()}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Root component ────────────────────────────────────────────────────────────
 
-type Tab = "ops" | "feed" | "afinidade" | "padroes" | "mcp";
+type Tab = "ops" | "devs" | "feed" | "scorecard" | "afinidade" | "padroes" | "mcp";
 
 export function CerebroClient({
-  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes,
+  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes, scorecard, conflitos,
 }: {
   sessoes: Sessao[];
   afinidade: AfinidadeItem[];
@@ -519,8 +707,10 @@ export function CerebroClient({
   sshIdentities: SSHIdentity[];
   sinais: Sinal[];
   padroes: PadraoGlobal[];
+  scorecard: ScorecardDev[];
+  conflitos: Conflito[];
 }) {
-  const [tab, setTab] = useState<Tab>("ops");
+  const [tab, setTab] = useState<Tab>("devs");
   const router = useRouter();
 
   useEffect(() => {
@@ -541,8 +731,10 @@ export function CerebroClient({
   }
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: "ops",      label: `Ops (${sshIdentities.length})` },
+    { id: "devs",     label: `Devs (${sshIdentities.length})` },
+    { id: "ops",      label: conflitos.length > 0 ? `Ops ⚠${conflitos.length}` : "Ops" },
     { id: "feed",     label: `Feed (${sinais.length})` },
+    { id: "scorecard",label: "Scorecard" },
     { id: "afinidade",label: "Afinidade" },
     { id: "padroes",  label: `Padrões (${padroes.length})` },
     { id: "mcp",      label: `MCP (${activeMCP.length})` },
@@ -589,9 +781,25 @@ export function CerebroClient({
         ))}
       </div>
 
+      {/* Devs */}
+      {tab === "devs" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {sshIdentities.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+              Nenhum dev identificado no momento.
+              <br />
+              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/eu seu-nome</code> para se identificar.</span>
+            </div>
+          ) : (
+            sshIdentities.map((id, i) => <SSHIdentityCard key={i} id={id} />)
+          )}
+        </div>
+      )}
+
       {/* Ops */}
       {tab === "ops" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          <ConflitosSection conflitos={conflitos} />
           {sshIdentities.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
               Nenhum dev identificado no momento.
@@ -621,6 +829,18 @@ export function CerebroClient({
           ) : (
             sinais.map((s, i) => <FeedItem key={i} sinal={s} />)
           )}
+        </div>
+      )}
+
+      {/* Scorecard */}
+      {tab === "scorecard" && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Brain size={13} color={C.cyan} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Scorecard — últimos 7 dias</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>commits×5 + skills×2 + edições</span>
+          </div>
+          <ScorecardTable devs={scorecard} />
         </div>
       )}
 

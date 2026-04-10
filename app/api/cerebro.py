@@ -6,6 +6,7 @@ F6: continuidade entre devs (última sessão por projeto)
 """
 import base64
 import math
+import os
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
@@ -617,6 +618,156 @@ async def get_digest_hoje(db: AsyncSession = Depends(get_db)):
             for dev, dados in sorted(por_dev.items())
         ],
     }
+
+
+@router.get("/scorecard")
+async def get_scorecard(dias: int = 7, db: AsyncSession = Depends(get_db)):
+    """Scorecard semanal por dev: commits, edições, erros, sessões."""
+    desde = datetime.now(timezone.utc) - timedelta(days=dias)
+
+    sinais_res = await db.execute(
+        select(DevSignal).where(DevSignal.ts >= desde)
+    )
+    sinais = sinais_res.scalars().all()
+
+    sessoes_res = await db.execute(
+        select(SessionContext).where(SessionContext.timestamp >= desde)
+    )
+    sessoes = sessoes_res.scalars().all()
+
+    por_dev: dict[str, dict] = {}
+
+    for s in sinais:
+        dev = s.dev
+        if dev not in por_dev:
+            por_dev[dev] = {"commits": 0, "edits": 0, "errors": 0, "skills": 0, "projetos": set()}
+        if s.tipo == "commit_realizado":
+            por_dev[dev]["commits"] += 1
+        elif s.tipo == "arquivo_editado":
+            por_dev[dev]["edits"] += 1
+        elif s.tipo == "erro_bash":
+            por_dev[dev]["errors"] += 1
+        elif s.tipo == "skill_usada":
+            por_dev[dev]["skills"] += 1
+        por_dev[dev]["projetos"].add(s.projeto.split("/")[-1])
+
+    sessoes_por_dev: dict[str, int] = defaultdict(int)
+    for s in sessoes:
+        sessoes_por_dev[s.dev] += 1
+
+    resultado = []
+    todos_devs = set(por_dev.keys()) | set(sessoes_por_dev.keys())
+    for dev in sorted(todos_devs):
+        d = por_dev.get(dev, {"commits": 0, "edits": 0, "errors": 0, "skills": 0, "projetos": set()})
+        resultado.append({
+            "dev": dev,
+            "commits": d["commits"],
+            "edits": d["edits"],
+            "errors": d["errors"],
+            "skills": d["skills"],
+            "sessoes": sessoes_por_dev.get(dev, 0),
+            "projetos": sorted(d["projetos"]),
+            "score": d["commits"] * 5 + d["edits"] + d["skills"] * 2,
+        })
+    resultado.sort(key=lambda x: x["score"], reverse=True)
+    return {"dias": dias, "devs": resultado}
+
+
+@router.get("/conflitos")
+async def get_conflitos(horas: int = 24, db: AsyncSession = Depends(get_db)):
+    """Detecta arquivos editados por 2+ devs sem commit entre eles."""
+    desde = datetime.now(timezone.utc) - timedelta(hours=horas)
+
+    result = await db.execute(
+        select(DevSignal).where(
+            DevSignal.tipo.in_(["arquivo_editado", "commit_realizado"]),
+            DevSignal.ts >= desde,
+        ).order_by(DevSignal.ts.asc())
+    )
+    sinais = result.scalars().all()
+
+    # Para cada (projeto, arquivo): rastrear quais devs editaram sem commit depois
+    # arquivo_editado → marca dev como "sujo" naquele arquivo
+    # commit_realizado → limpa o dev naquele projeto
+    arquivos: dict[str, dict[str, str]] = {}  # (proj, arq) → {dev: ts}
+    commits_por_dev: dict[str, str] = {}  # dev → último commit ts
+
+    for s in sinais:
+        if s.tipo == "commit_realizado":
+            commits_por_dev[s.dev] = s.ts.isoformat()
+        elif s.tipo == "arquivo_editado":
+            arq = s.dados.get("arquivo", "")
+            if not arq:
+                continue
+            key = f"{s.projeto}||{arq}"
+            if key not in arquivos:
+                arquivos[key] = {}
+            # Só marca como "sem commit" se o dev não commitou depois desta edição
+            ultimo_commit = commits_por_dev.get(s.dev, "")
+            if not ultimo_commit or ultimo_commit < s.ts.isoformat():
+                arquivos[key][s.dev] = s.ts.isoformat()
+            else:
+                arquivos[key].pop(s.dev, None)
+
+    conflitos = []
+    for key, devs_map in arquivos.items():
+        if len(devs_map) >= 2:
+            proj, arq = key.split("||", 1)
+            conflitos.append({
+                "projeto": proj,
+                "arquivo": arq,
+                "devs": list(devs_map.keys()),
+                "ultima_edicao": max(devs_map.values()),
+            })
+
+    conflitos.sort(key=lambda x: x["ultima_edicao"], reverse=True)
+    return {"horas": horas, "conflitos": conflitos[:20]}
+
+
+@router.get("/projetos/abandono")
+async def get_projetos_abandono(dias_inativo: int = 3, min_uncommitted: int = 3, db: AsyncSession = Depends(get_db)):
+    """Projetos com arquivos não commitados e sem atividade recente."""
+    import json as _json
+    import tempfile as _tmp
+
+    # Ler status do git monitor
+    status_file = os.path.join(_tmp.gettempdir(), "cerebro_project_status.json")
+    git_status: dict = {}
+    try:
+        git_status = _json.loads(open(status_file).read())
+    except Exception:
+        pass
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=dias_inativo)
+    sessoes_res = await db.execute(
+        select(SessionContext).where(SessionContext.timestamp >= cutoff)
+    )
+    projetos_ativos = {s.projeto for s in sessoes_res.scalars().all()}
+
+    abandono = []
+    for slug, info in git_status.items():
+        uncommitted = info.get("uncommitted_count", 0)
+        if uncommitted < min_uncommitted:
+            continue
+        if "/" not in slug:  # pular sem remote
+            continue
+        if slug in projetos_ativos:
+            continue
+
+        # Calcular dias sem atividade
+        scanned_at = info.get("scanned_at", "")
+        ultimo_commit = info.get("ultimo_commit", "")
+
+        abandono.append({
+            "projeto": slug,
+            "nome": slug.split("/")[-1],
+            "uncommitted": uncommitted,
+            "branch": info.get("branch", ""),
+            "ultimo_commit": ultimo_commit,
+        })
+
+    abandono.sort(key=lambda x: x["uncommitted"], reverse=True)
+    return {"dias_inativo": dias_inativo, "projetos": abandono[:10]}
 
 
 @router.get("/afinidade")
