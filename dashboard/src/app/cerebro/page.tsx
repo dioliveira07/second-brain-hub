@@ -28,11 +28,32 @@ export type MCPConn = {
   ativo: boolean;
 };
 
+export type SSHSession = {
+  ssh_ip: string;
+  ssh_port: string;
+  expires_at: string;
+  projeto: string | null;
+  ctx_pct: number | null;
+  tokens_total: number | null;
+  turns: number | null;
+  model: string | null;
+  account_name: string | null;
+  plan: string | null;
+  updated_at: string | null;
+};
+
 export type SSHIdentity = {
   dev: string;
   sessoes: number;
   ssh_ip: string;
   expires_at: string;
+  ctx_pct: number | null;
+  tokens_total: number | null;
+  turns: number | null;
+  model: string | null;
+  account_name: string | null;
+  plan: string | null;
+  sessions: SSHSession[];
 };
 
 export default async function CerebroPage() {

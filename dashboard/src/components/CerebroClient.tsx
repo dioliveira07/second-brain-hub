@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal } from "lucide-react";
-import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity } from "@/app/cerebro/page";
+import { Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal, ChevronDown, ChevronRight } from "lucide-react";
+import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -228,46 +228,160 @@ function MCPConnCard({ c }: { c: MCPConn }) {
   );
 }
 
+function fmtTokens(n: number | null): string {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function CtxBar({ pct }: { pct: number | null }) {
+  if (pct == null) return <span style={{ color: C.dim, fontFamily: "var(--mono)", fontSize: "0.7rem" }}>—</span>;
+  const filled = Math.round((pct / 100) * 10);
+  const bar = "▓".repeat(filled) + "░".repeat(10 - filled);
+  const color = pct > 80 ? "#ef4444" : pct > 60 ? "#eab308" : C.green;
+  return (
+    <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color }}>
+      ctx {pct}% {bar}
+    </span>
+  );
+}
+
+function StatusLine({ s }: { s: Pick<SSHSession, "ctx_pct" | "tokens_total" | "turns" | "model" | "account_name" | "plan"> }) {
+  const modelLabel = s.model
+    ? s.model.includes("opus") ? "⚠ opus" : s.model.includes("sonnet") ? "sonnet" : s.model.includes("haiku") ? "haiku" : s.model
+    : null;
+  const modelColor = s.model?.includes("opus") ? "#ef4444" : s.model?.includes("sonnet") ? C.green : C.cyan;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+      <CtxBar pct={s.ctx_pct} />
+      <span style={{ color: C.dim, fontFamily: "var(--mono)", fontSize: "0.7rem" }}>
+        🔢 {fmtTokens(s.tokens_total)}
+      </span>
+      {s.turns != null && (
+        <span style={{ color: C.muted, fontFamily: "var(--mono)", fontSize: "0.7rem" }}>
+          turns {s.turns}
+        </span>
+      )}
+      {modelLabel && (
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: modelColor }}>
+          {modelLabel}
+        </span>
+      )}
+      {s.account_name && (
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.cyan }}>
+          ● conta
+        </span>
+      )}
+      {(s.account_name || s.plan) && (
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.cyan }}>
+          {[s.account_name, s.plan].filter(Boolean).join(" · ")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SSHSessionRow({ s }: { s: SSHSession }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+      borderRadius: 6, padding: "0.6rem 0.85rem",
+      display: "flex", flexDirection: "column", gap: "0.25rem",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.muted }}>
+          {s.ssh_ip}:{s.ssh_port}
+        </span>
+        {s.projeto && (
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.cyan }}>
+            {s.projeto}
+          </span>
+        )}
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, marginLeft: "auto" }}>
+          {s.updated_at ? new Date(s.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+        </span>
+      </div>
+      <StatusLine s={s} />
+    </div>
+  );
+}
+
 function SSHIdentityCard({ id }: { id: SSHIdentity }) {
+  const [expanded, setExpanded] = useState(false);
   const expiresDate = new Date(id.expires_at);
   const now = new Date();
   const minutesLeft = Math.round((expiresDate.getTime() - now.getTime()) / 60000);
   const hoursLeft = Math.floor(minutesLeft / 60);
   const timeLeft = hoursLeft > 0 ? `${hoursLeft}h restantes` : `${minutesLeft}min restantes`;
+
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.green}33`,
-      borderRadius: 8, padding: "0.75rem 1rem",
-      display: "flex", alignItems: "center", gap: "0.75rem",
+      borderRadius: 8, overflow: "hidden",
+      transition: "border-color 150ms",
     }}>
-      <Terminal size={14} color={C.green} style={{ flexShrink: 0 }} />
-      <Avatar name={id.dev} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: devColor(id.dev) }}>
-            {id.dev}
-          </span>
-          <span style={{
-            background: `${C.green}22`, border: `1px solid ${C.green}44`,
-            color: C.green, borderRadius: 4, padding: "0px 6px",
-            fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
-          }}>ATIVO</span>
-          {id.sessoes > 1 && (
+      {/* Header — clicável */}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          padding: "0.75rem 1rem", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          userSelect: "none",
+        }}
+      >
+        <Terminal size={14} color={C.green} style={{ flexShrink: 0 }} />
+        <Avatar name={id.dev} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: devColor(id.dev) }}>
+              {id.dev}
+            </span>
             <span style={{
-              background: `${C.cyan}15`, border: `1px solid ${C.cyan}33`,
-              color: C.cyan, borderRadius: 4, padding: "0px 6px",
-              fontFamily: "var(--mono)", fontSize: "0.62rem",
-            }}>{id.sessoes} sessões</span>
-          )}
+              background: `${C.green}22`, border: `1px solid ${C.green}44`,
+              color: C.green, borderRadius: 4, padding: "0px 6px",
+              fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
+            }}>ATIVO</span>
+            {id.sessoes > 1 && (
+              <span style={{
+                background: `${C.cyan}15`, border: `1px solid ${C.cyan}33`,
+                color: C.cyan, borderRadius: 4, padding: "0px 6px",
+                fontFamily: "var(--mono)", fontSize: "0.62rem",
+              }}>{id.sessoes} sessões</span>
+            )}
+          </div>
+          {/* Statusline compacta no header */}
+          <StatusLine s={id} />
         </div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
-          {id.ssh_ip}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim }}>
+            <Clock size={11} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeLeft}</span>
+          </div>
+          {expanded
+            ? <ChevronDown size={13} color={C.dim} />
+            : <ChevronRight size={13} color={C.dim} />
+          }
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
-        <Clock size={11} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeLeft}</span>
-      </div>
+
+      {/* Sessões expandidas */}
+      {expanded && id.sessions.length > 0 && (
+        <div style={{
+          borderTop: `1px solid ${C.border}`,
+          padding: "0.75rem 1rem",
+          display: "flex", flexDirection: "column", gap: "0.5rem",
+          background: "rgba(0,0,0,0.15)",
+        }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, letterSpacing: "0.08em", marginBottom: "0.15rem" }}>
+            SESSÕES ATIVAS ({id.sessions.length})
+          </div>
+          {id.sessions.map((s, i) => (
+            <SSHSessionRow key={i} s={s} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

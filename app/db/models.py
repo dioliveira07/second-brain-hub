@@ -125,6 +125,15 @@ class SSHIdentity(Base):
     dev: Mapped[str] = mapped_column(String(100), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Statusline stats (atualizados a cada /sbh-auth ou push do statusline)
+    ctx_pct: Mapped[int | None] = mapped_column(nullable=True)
+    tokens_total: Mapped[int | None] = mapped_column(nullable=True)
+    turns: Mapped[int | None] = mapped_column(nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    account_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    plan: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    projeto: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class MCPConnection(Base):

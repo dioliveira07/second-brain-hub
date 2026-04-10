@@ -241,6 +241,14 @@ class SSHIdentityPayload(BaseModel):
     ssh_ip: str
     ssh_port: str
     dev: str
+    # Statsline — opcionais
+    ctx_pct: int | None = None
+    tokens_total: int | None = None
+    turns: int | None = None
+    model: str | None = None
+    account_name: str | None = None
+    plan: str | None = None
+    projeto: str | None = None
 
 
 @router.post("/ssh/identity")
@@ -256,15 +264,29 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
     )
     existing = result.scalar_one_or_none()
 
+    stats_fields = {
+        "ctx_pct": payload.ctx_pct,
+        "tokens_total": payload.tokens_total,
+        "turns": payload.turns,
+        "model": payload.model,
+        "account_name": payload.account_name,
+        "plan": payload.plan,
+        "projeto": payload.projeto,
+    }
+
     if existing:
         existing.dev = payload.dev
         existing.expires_at = expires_at
+        for k, v in stats_fields.items():
+            if v is not None:
+                setattr(existing, k, v)
     else:
         db.add(SSHIdentity(
             ssh_ip=payload.ssh_ip,
             ssh_port=payload.ssh_port,
             dev=payload.dev,
             expires_at=expires_at,
+            **{k: v for k, v in stats_fields.items() if v is not None},
         ))
 
     await db.commit()
@@ -273,7 +295,7 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
 
 @router.get("/ssh/identities")
 async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
-    """Lista devs ativos via SSH, agrupados por nome (sessões únicas por dev)."""
+    """Lista devs ativos via SSH, agrupados por nome. Cada dev inclui lista de sessões individuais."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(SSHIdentity)
@@ -282,14 +304,45 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
     )
     identities = result.scalars().all()
 
-    # Agrupa por dev: conta sessões e pega o expires_at mais longo
     grouped: dict[str, dict] = {}
     for i in identities:
         if i.dev not in grouped:
-            grouped[i.dev] = {"dev": i.dev, "sessoes": 0, "expires_at": i.expires_at, "ssh_ip": i.ssh_ip}
+            grouped[i.dev] = {
+                "dev": i.dev,
+                "sessoes": 0,
+                "expires_at": i.expires_at,
+                "ssh_ip": i.ssh_ip,
+                # stats do registro mais recente (expires_at maior)
+                "ctx_pct": i.ctx_pct,
+                "tokens_total": i.tokens_total,
+                "turns": i.turns,
+                "model": i.model,
+                "account_name": i.account_name,
+                "plan": i.plan,
+                "sessions": [],
+            }
         grouped[i.dev]["sessoes"] += 1
         if i.expires_at > grouped[i.dev]["expires_at"]:
             grouped[i.dev]["expires_at"] = i.expires_at
+            grouped[i.dev]["ctx_pct"] = i.ctx_pct
+            grouped[i.dev]["tokens_total"] = i.tokens_total
+            grouped[i.dev]["turns"] = i.turns
+            grouped[i.dev]["model"] = i.model
+            grouped[i.dev]["account_name"] = i.account_name
+            grouped[i.dev]["plan"] = i.plan
+        grouped[i.dev]["sessions"].append({
+            "ssh_ip": i.ssh_ip,
+            "ssh_port": i.ssh_port,
+            "expires_at": i.expires_at.isoformat(),
+            "projeto": i.projeto,
+            "ctx_pct": i.ctx_pct,
+            "tokens_total": i.tokens_total,
+            "turns": i.turns,
+            "model": i.model,
+            "account_name": i.account_name,
+            "plan": i.plan,
+            "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+        })
 
     return [
         {
@@ -297,6 +350,13 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
             "sessoes": v["sessoes"],
             "ssh_ip": v["ssh_ip"],
             "expires_at": v["expires_at"].isoformat(),
+            "ctx_pct": v["ctx_pct"],
+            "tokens_total": v["tokens_total"],
+            "turns": v["turns"],
+            "model": v["model"],
+            "account_name": v["account_name"],
+            "plan": v["plan"],
+            "sessions": v["sessions"],
         }
         for v in grouped.values()
     ]
