@@ -1,11 +1,40 @@
+import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import delete
 
 from app.api import health, indexing, search, repos, webhooks, auth, notifications, graph, stats, cerebro
 from app.core.config import settings
-from app.db.session import init_db
+from app.db.session import init_db, async_session
 from app.services.qdrant import init_collections
 from app.services import embeddings
+
+
+async def cleanup_sessions():
+    """Remove sessões expiradas e ghosts (sem dados) do banco."""
+    from app.db.models import SSHIdentity
+    while True:
+        try:
+            async with async_session() as db:
+                now = datetime.now(timezone.utc)
+                # 1) Sessões expiradas
+                await db.execute(
+                    delete(SSHIdentity).where(SSHIdentity.expires_at <= now)
+                )
+                # 2) Ghosts: sem machine_hostname E sem projeto, criadas há mais de 1h
+                ghost_cutoff = now - timedelta(hours=1)
+                await db.execute(
+                    delete(SSHIdentity).where(
+                        SSHIdentity.machine_hostname.is_(None),
+                        SSHIdentity.projeto.is_(None),
+                        SSHIdentity.updated_at <= ghost_cutoff,
+                    )
+                )
+                await db.commit()
+        except Exception:
+            pass
+        await asyncio.sleep(3600)  # roda a cada 1h
 
 
 @asynccontextmanager
@@ -14,7 +43,9 @@ async def lifespan(app: FastAPI):
     await init_collections()
     # Modelo de embeddings carregado lazy — apenas na primeira busca
     # Indexação roda no celery-worker, não aqui
+    task = asyncio.create_task(cleanup_sessions())
     yield
+    task.cancel()
 
 
 app = FastAPI(
