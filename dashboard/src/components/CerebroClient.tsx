@@ -194,14 +194,19 @@ function AfinidadeTable({ afinidade }: { afinidade: AfinidadeItem[] }) {
   );
 }
 
+type SSHIdentityWithLocal = SSHIdentity & { _sessionsHere: SSHSession[] };
+
 function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdentity[] }) {
   const [expanded, setExpanded] = useState(false);
 
   // Devs com sessões SSH ativas nesta máquina (machine_ip = IP de onde o Claude roda)
   // machine_ip bate com o client_ip do MCP (ambos são o IP da máquina que fez a conexão)
-  const devs = sshIdentities.filter(id =>
-    id.sessions.some(s => s.machine_ip === c.client_ip)
-  );
+  const devs: SSHIdentityWithLocal[] = sshIdentities
+    .filter(id => id.sessions.some(s => s.machine_ip === c.client_ip))
+    .map(id => ({
+      ...id,
+      _sessionsHere: id.sessions.filter(s => s.machine_ip === c.client_ip),
+    }));
 
   return (
     <div style={{
@@ -240,7 +245,7 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
               }}>
                 <Terminal size={9} />
                 {d.dev}
-                {d.sessoes > 1 && <span style={{ opacity: 0.7 }}> ×{d.sessoes}</span>}
+                {d._sessionsHere.length > 1 && <span style={{ opacity: 0.7 }}> ×{d._sessionsHere.length}</span>}
               </span>
             ))}
           </div>
@@ -287,7 +292,7 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
                 </span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "0.5rem" }}>
-                {d.sessions.filter(s => s.machine_ip === c.client_ip).map((s, i) => (
+                {d._sessionsHere.map((s, i) => (
                   <SSHSessionRow key={i} s={s} />
                 ))}
               </div>
@@ -355,24 +360,29 @@ function StatusLine({ s }: { s: Pick<SSHSession, "ctx_pct" | "tokens_total" | "t
 }
 
 function SSHSessionRow({ s }: { s: SSHSession }) {
+  const hasData = s.machine_hostname || s.projeto || s.ctx_pct != null || s.account_name;
   return (
     <div style={{
-      background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`,
+      background: hasData ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.01)",
+      border: `1px solid ${hasData ? C.border : C.border + "66"}`,
       borderRadius: 6, padding: "0.6rem 0.85rem",
       display: "flex", flexDirection: "column", gap: "0.25rem",
+      opacity: hasData ? 1 : 0.55,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
         {/* IP cliente → hostname servidor */}
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.muted }}>
           {s.ssh_ip}:{s.ssh_port}
         </span>
-        {s.machine_hostname && (
+        {s.machine_hostname ? (
           <>
             <span style={{ color: C.dim, fontSize: "0.65rem" }}>→</span>
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.purple }}>
               {s.machine_hostname}
             </span>
           </>
+        ) : (
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim }}>→ ?</span>
         )}
         {s.projeto && (
           <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.cyan }}>
@@ -380,10 +390,10 @@ function SSHSessionRow({ s }: { s: SSHSession }) {
           </span>
         )}
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim, marginLeft: "auto" }}>
-          {s.updated_at ? new Date(s.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}
+          {s.updated_at ? new Date(s.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "sem dados"}
         </span>
       </div>
-      <StatusLine s={s} />
+      {hasData && <StatusLine s={s} />}
     </div>
   );
 }
