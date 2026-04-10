@@ -359,10 +359,18 @@ function SSHIdentityCard({ id }: { id: SSHIdentity }) {
             <Clock size={11} />
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeLeft}</span>
           </div>
-          {expanded
-            ? <ChevronDown size={13} color={C.dim} />
-            : <ChevronRight size={13} color={C.dim} />
-          }
+          <div style={{
+            width: 20, height: 20, borderRadius: 4,
+            background: expanded ? `${C.cyan}22` : "rgba(255,255,255,0.05)",
+            border: `1px solid ${expanded ? C.cyan + "55" : "rgba(255,255,255,0.1)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 150ms",
+          }}>
+            {expanded
+              ? <ChevronDown size={11} color={C.cyan} />
+              : <ChevronRight size={11} color={C.muted} />
+            }
+          </div>
         </div>
       </div>
 
