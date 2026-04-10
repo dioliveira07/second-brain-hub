@@ -497,6 +497,128 @@ async def get_projeto_devs_ativos(projeto: str, db: AsyncSession = Depends(get_d
     ]
 
 
+@router.get("/sinais")
+async def listar_sinais(
+    dev: str | None = None,
+    projeto: str | None = None,
+    tipo: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista DevSignals com filtros opcionais."""
+    from sqlalchemy import and_
+    conditions = []
+    if dev:
+        conditions.append(DevSignal.dev == dev)
+    if projeto:
+        conditions.append(DevSignal.projeto == projeto)
+    if tipo:
+        conditions.append(DevSignal.tipo == tipo)
+    q = select(DevSignal).order_by(DevSignal.ts.desc()).limit(min(limit, 200))
+    if conditions:
+        q = q.where(and_(*conditions))
+    result = await db.execute(q)
+    sinais = result.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "tipo": s.tipo,
+            "dev": s.dev,
+            "projeto": s.projeto,
+            "dados": s.dados,
+            "ts": s.ts.isoformat(),
+        }
+        for s in sinais
+    ]
+
+
+@router.get("/padroes")
+async def get_padroes_global(dias: int = 7, min_ocorrencias: int = 2, limit: int = 20, db: AsyncSession = Depends(get_db)):
+    """Padrões de erro globais (todos os projetos)."""
+    desde = datetime.now(timezone.utc) - timedelta(days=dias)
+    result = await db.execute(
+        select(DevSignal).where(DevSignal.tipo == "erro_bash", DevSignal.ts >= desde)
+    )
+    sinais = result.scalars().all()
+
+    contagens: dict[tuple, int] = defaultdict(int)
+    for s in sinais:
+        cmd_b64 = s.dados.get("cmd", "")
+        try:
+            cmd = base64.b64decode(cmd_b64).decode("utf-8", errors="replace").strip().split()[0].split("/")[-1]
+        except Exception:
+            cmd = "?"
+        if cmd and cmd != "?":
+            contagens[(s.projeto, cmd)] += 1
+
+    padroes = [
+        {"projeto": proj, "comando": cmd, "ocorrencias": n}
+        for (proj, cmd), n in sorted(contagens.items(), key=lambda x: x[1], reverse=True)
+        if n >= min_ocorrencias
+    ][:limit]
+    return {"dias": dias, "padroes": padroes}
+
+
+@router.get("/digest/hoje")
+async def get_digest_hoje(db: AsyncSession = Depends(get_db)):
+    """Digest do dia: sessões, commits e sinais agrupados por dev."""
+    agora = datetime.now(timezone.utc)
+    desde = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    sessoes_res = await db.execute(
+        select(SessionContext).where(SessionContext.timestamp >= desde)
+    )
+    sessoes = sessoes_res.scalars().all()
+
+    sinais_res = await db.execute(
+        select(DevSignal).where(DevSignal.ts >= desde)
+    )
+    sinais = sinais_res.scalars().all()
+
+    por_dev: dict[str, dict] = {}
+
+    for s in sessoes:
+        dev = s.dev
+        if dev not in por_dev:
+            por_dev[dev] = {"projetos": set(), "commits": [], "sessoes": 0, "edits": 0, "errors": 0}
+        por_dev[dev]["projetos"].add(s.projeto.split("/")[-1])
+        if s.ultimo_commit:
+            msg = s.ultimo_commit.split("(")[0].strip()
+            if msg:
+                por_dev[dev]["commits"].append(msg)
+        por_dev[dev]["sessoes"] += 1
+
+    for s in sinais:
+        dev = s.dev
+        if dev not in por_dev:
+            por_dev[dev] = {"projetos": set(), "commits": [], "sessoes": 0, "edits": 0, "errors": 0}
+        if s.tipo == "arquivo_editado":
+            por_dev[dev]["edits"] += 1
+        elif s.tipo == "erro_bash":
+            por_dev[dev]["errors"] += 1
+        elif s.tipo == "commit_realizado":
+            msg = s.dados.get("msg", "")
+            if msg and msg not in por_dev[dev]["commits"]:
+                por_dev[dev]["commits"].append(msg)
+
+    return {
+        "data": agora.strftime("%d/%m/%Y"),
+        "total_sessoes": len(sessoes),
+        "total_sinais": len(sinais),
+        "devs": [
+            {
+                "dev": dev,
+                "projetos": sorted(dados["projetos"]),
+                "commits": list(dict.fromkeys(dados["commits"]))[:5],
+                "sessoes": dados["sessoes"],
+                "edits": dados["edits"],
+                "errors": dados["errors"],
+            }
+            for dev, dados in sorted(por_dev.items())
+        ],
+    }
+
+
 @router.get("/afinidade")
 async def get_afinidade_geral(dias: int = 30, db: AsyncSession = Depends(get_db)):
     """Retorna tabela completa de afinidade dev × projeto."""

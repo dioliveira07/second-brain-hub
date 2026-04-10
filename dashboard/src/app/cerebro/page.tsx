@@ -60,11 +60,28 @@ export type SSHIdentity = {
   sessions: SSHSession[];
 };
 
+export type Sinal = {
+  id: string;
+  tipo: string;
+  dev: string;
+  projeto: string;
+  dados: Record<string, unknown>;
+  ts: string;
+};
+
+export type PadraoGlobal = {
+  projeto: string;
+  comando: string;
+  ocorrencias: number;
+};
+
 export default async function CerebroPage() {
   let sessoes: Sessao[] = [];
   let afinidade: AfinidadeItem[] = [];
   let mcpConns: MCPConn[] = [];
   let sshIdentities: SSHIdentity[] = [];
+  let sinais: Sinal[] = [];
+  let padroes: PadraoGlobal[] = [];
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -83,6 +100,15 @@ export default async function CerebroPage() {
     sshIdentities = await cerebroFetch<SSHIdentity[]>("/ssh/identities");
   } catch {}
 
+  try {
+    sinais = await cerebroFetch<Sinal[]>("/sinais?limit=60");
+  } catch {}
+
+  try {
+    const p = await cerebroFetch<{ padroes: PadraoGlobal[] }>("/padroes?dias=7&min_ocorrencias=2");
+    padroes = p.padroes ?? [];
+  } catch {}
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem", maxWidth: 1100 }}>
       <FadeIn delay={0}>
@@ -92,12 +118,19 @@ export default async function CerebroPage() {
             Cérebro
           </h2>
           <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
-            Sessões ativas, afinidade de devs e clientes MCP conectados
+            Ops em tempo real, feed de atividade, afinidade de devs e clientes MCP
           </p>
         </div>
       </FadeIn>
 
-      <CerebroClient sessoes={sessoes} afinidade={afinidade} mcpConns={mcpConns} sshIdentities={sshIdentities} />
+      <CerebroClient
+        sessoes={sessoes}
+        afinidade={afinidade}
+        mcpConns={mcpConns}
+        sshIdentities={sshIdentities}
+        sinais={sinais}
+        padroes={padroes}
+      />
     </div>
   );
 }
