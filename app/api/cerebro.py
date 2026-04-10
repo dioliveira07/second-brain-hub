@@ -249,6 +249,8 @@ class SSHIdentityPayload(BaseModel):
     account_name: str | None = None
     plan: str | None = None
     projeto: str | None = None
+    machine_hostname: str | None = None
+    machine_ip: str | None = None
 
 
 @router.post("/ssh/identity")
@@ -272,6 +274,8 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
         "account_name": payload.account_name,
         "plan": payload.plan,
         "projeto": payload.projeto,
+        "machine_hostname": payload.machine_hostname,
+        "machine_ip": payload.machine_ip,
     }
 
     if existing:
@@ -312,7 +316,8 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
                 "sessoes": 0,
                 "expires_at": i.expires_at,
                 "ssh_ip": i.ssh_ip,
-                # stats do registro mais recente (expires_at maior)
+                "machine_hostname": i.machine_hostname,
+                "machine_ip": i.machine_ip,
                 "ctx_pct": i.ctx_pct,
                 "tokens_total": i.tokens_total,
                 "turns": i.turns,
@@ -324,6 +329,8 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
         grouped[i.dev]["sessoes"] += 1
         if i.expires_at > grouped[i.dev]["expires_at"]:
             grouped[i.dev]["expires_at"] = i.expires_at
+            grouped[i.dev]["ssh_ip"] = i.ssh_ip
+            grouped[i.dev]["machine_hostname"] = i.machine_hostname
             grouped[i.dev]["ctx_pct"] = i.ctx_pct
             grouped[i.dev]["tokens_total"] = i.tokens_total
             grouped[i.dev]["turns"] = i.turns
@@ -333,6 +340,8 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
         grouped[i.dev]["sessions"].append({
             "ssh_ip": i.ssh_ip,
             "ssh_port": i.ssh_port,
+            "machine_hostname": i.machine_hostname,
+            "machine_ip": i.machine_ip,
             "expires_at": i.expires_at.isoformat(),
             "projeto": i.projeto,
             "ctx_pct": i.ctx_pct,
@@ -349,6 +358,8 @@ async def list_ssh_identities(db: AsyncSession = Depends(get_db)):
             "dev": v["dev"],
             "sessoes": v["sessoes"],
             "ssh_ip": v["ssh_ip"],
+            "machine_hostname": v.get("machine_hostname"),
+            "machine_ip": v.get("machine_ip"),
             "expires_at": v["expires_at"].isoformat(),
             "ctx_pct": v["ctx_pct"],
             "tokens_total": v["tokens_total"],

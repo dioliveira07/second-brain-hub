@@ -311,8 +311,17 @@ async def run_stdio():
 
 # ── Modo HTTP centralizado ─────────────────────────────────────────────────────
 
+_heartbeat_last: dict[str, float] = {}   # client_ip → timestamp último heartbeat
+_HEARTBEAT_COOLDOWN = 300                 # 5 minutos entre heartbeats por cliente
+
 def _notify_connection(client_ip: str, client_name: str, machine: str) -> None:
-    """Notifica o hub sobre uma nova conexão MCP (best-effort)."""
+    """Notifica o hub sobre conexão MCP (best-effort). Usado no initialize e como heartbeat."""
+    import time
+    now = time.time()
+    last = _heartbeat_last.get(client_ip, 0)
+    if now - last < _HEARTBEAT_COOLDOWN:
+        return
+    _heartbeat_last[client_ip] = now
     try:
         import urllib.request as urlreq
         hub_url = os.environ.get("HUB_API_URL", DEFAULT_HUB_URL).rstrip("/")
@@ -474,19 +483,19 @@ def run_http(port: int = 8020):
 
                 try:
                     data = json.loads(body)
-                    if data.get("method") == "initialize":
-                        headers_raw = dict(scope.get("headers", []))
-                        fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
-                        client = scope.get("client") or ("unknown", 0)
-                        client_ip = fwd.split(",")[0].strip() if fwd else client[0]
-                        user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
-                        machine = headers_raw.get(b"x-machine", b"").decode()
-                        import threading
-                        threading.Thread(
-                            target=_notify_connection,
-                            args=(client_ip, user_agent, machine),
-                            daemon=True,
-                        ).start()
+                    headers_raw = dict(scope.get("headers", []))
+                    fwd = headers_raw.get(b"x-forwarded-for", b"").decode()
+                    client = scope.get("client") or ("unknown", 0)
+                    client_ip = fwd.split(",")[0].strip() if fwd else client[0]
+                    user_agent = headers_raw.get(b"user-agent", b"").decode()[:100]
+                    machine = headers_raw.get(b"x-machine", b"").decode()
+                    # Heartbeat a cada request MCP (cooldown 5min por cliente em memória)
+                    import threading
+                    threading.Thread(
+                        target=_notify_connection,
+                        args=(client_ip, user_agent, machine),
+                        daemon=True,
+                    ).start()
                 except Exception:
                     pass
 

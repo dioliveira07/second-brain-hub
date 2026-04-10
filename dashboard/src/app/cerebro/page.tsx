@@ -31,6 +31,8 @@ export type MCPConn = {
 export type SSHSession = {
   ssh_ip: string;
   ssh_port: string;
+  machine_hostname: string | null;
+  machine_ip: string | null;
   expires_at: string;
   projeto: string | null;
   ctx_pct: number | null;
@@ -46,6 +48,8 @@ export type SSHIdentity = {
   dev: string;
   sessoes: number;
   ssh_ip: string;
+  machine_hostname: string | null;
+  machine_ip: string | null;
   expires_at: string;
   ctx_pct: number | null;
   tokens_total: number | null;

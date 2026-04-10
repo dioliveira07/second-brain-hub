@@ -194,36 +194,107 @@ function AfinidadeTable({ afinidade }: { afinidade: AfinidadeItem[] }) {
   );
 }
 
-function MCPConnCard({ c }: { c: MCPConn }) {
+function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdentity[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Devs com sessões SSH ativas nesta máquina (machine_ip = IP de onde o Claude roda)
+  // machine_ip bate com o client_ip do MCP (ambos são o IP da máquina que fez a conexão)
+  const devs = sshIdentities.filter(id =>
+    id.sessions.some(s => s.machine_ip === c.client_ip)
+  );
+
   return (
     <div style={{
       background: C.card, border: `1px solid ${c.ativo ? C.cyan + "33" : C.border}`,
-      borderRadius: 8, padding: "0.75rem 1rem",
-      display: "flex", alignItems: "center", gap: "0.75rem",
+      borderRadius: 8, overflow: "hidden",
     }}>
-      <Wifi size={14} color={c.ativo ? C.cyan : C.dim} style={{ flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: c.ativo ? C.cyan : C.muted }}>
-            {c.machine || c.client_ip}
-          </span>
-          {c.ativo && (
-            <span style={{
-              background: `${C.green}22`, border: `1px solid ${C.green}44`,
-              color: C.green, borderRadius: 4, padding: "0px 6px",
-              fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
-            }}>ATIVO</span>
+      {/* Header */}
+      <div
+        onClick={() => devs.length > 0 && setExpanded(e => !e)}
+        style={{
+          padding: "0.75rem 1rem",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+          cursor: devs.length > 0 ? "pointer" : "default",
+          userSelect: "none",
+        }}
+      >
+        <Wifi size={14} color={c.ativo ? C.cyan : C.dim} style={{ flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: c.ativo ? C.cyan : C.muted }}>
+              {c.machine || c.client_ip}
+            </span>
+            {c.ativo && (
+              <span style={{
+                background: `${C.green}22`, border: `1px solid ${C.green}44`,
+                color: C.green, borderRadius: 4, padding: "0px 6px",
+                fontFamily: "var(--mono)", fontSize: "0.62rem", letterSpacing: "0.08em",
+              }}>ATIVO</span>
+            )}
+            {/* Devs identificados nesta máquina */}
+            {devs.map(d => (
+              <span key={d.dev} style={{
+                background: `${devColor(d.dev)}15`, border: `1px solid ${devColor(d.dev)}33`,
+                color: devColor(d.dev), borderRadius: 4, padding: "0px 6px",
+                fontFamily: "var(--mono)", fontSize: "0.62rem", display: "flex", alignItems: "center", gap: 3,
+              }}>
+                <Terminal size={9} />
+                {d.dev}
+                {d.sessoes > 1 && <span style={{ opacity: 0.7 }}> ×{d.sessoes}</span>}
+              </span>
+            ))}
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
+            {c.client_ip}
+            {c.client_name && <span style={{ marginLeft: "0.5rem", opacity: 0.6 }}>· {c.client_name.slice(0, 50)}</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim }}>
+            <Clock size={11} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(c.minutos_atras)}</span>
+          </div>
+          {devs.length > 0 && (
+            <div style={{
+              width: 20, height: 20, borderRadius: 4,
+              background: expanded ? `${C.cyan}22` : "rgba(255,255,255,0.05)",
+              border: `1px solid ${expanded ? C.cyan + "55" : "rgba(255,255,255,0.1)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {expanded ? <ChevronDown size={11} color={C.cyan} /> : <ChevronRight size={11} color={C.muted} />}
+            </div>
           )}
         </div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.dim, marginTop: 2 }}>
-          {c.client_ip}
-          {c.client_name && <span style={{ marginLeft: "0.5rem", opacity: 0.6 }}>· {c.client_name.slice(0, 60)}</span>}
+      </div>
+
+      {/* Sessões dos devs expandidas */}
+      {expanded && devs.length > 0 && (
+        <div style={{
+          borderTop: `1px solid ${C.border}`,
+          background: "rgba(0,0,0,0.15)",
+          padding: "0.75rem 1rem",
+          display: "flex", flexDirection: "column", gap: "0.75rem",
+        }}>
+          {devs.map(d => (
+            <div key={d.dev}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                <Avatar name={d.dev} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", fontWeight: 600, color: devColor(d.dev) }}>
+                  {d.dev}
+                </span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.67rem", color: C.dim }}>
+                  {d.sessoes} sessão{d.sessoes > 1 ? "ões" : ""}
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "0.5rem" }}>
+                {d.sessions.filter(s => s.machine_ip === c.client_ip).map((s, i) => (
+                  <SSHSessionRow key={i} s={s} />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim, flexShrink: 0 }}>
-        <Clock size={11} />
-        <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(c.minutos_atras)}</span>
-      </div>
+      )}
     </div>
   );
 }
@@ -291,9 +362,18 @@ function SSHSessionRow({ s }: { s: SSHSession }) {
       display: "flex", flexDirection: "column", gap: "0.25rem",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+        {/* IP cliente → hostname servidor */}
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: C.muted }}>
           {s.ssh_ip}:{s.ssh_port}
         </span>
+        {s.machine_hostname && (
+          <>
+            <span style={{ color: C.dim, fontSize: "0.65rem" }}>→</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.purple }}>
+              {s.machine_hostname}
+            </span>
+          </>
+        )}
         {s.projeto && (
           <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.cyan }}>
             {s.projeto}
@@ -492,7 +572,7 @@ export function CerebroClient({ sessoes, afinidade, mcpConns, sshIdentities }: {
               </span>
             </div>
           ) : (
-            mcpConns.map((c, i) => <MCPConnCard key={i} c={c} />)
+            mcpConns.map((c, i) => <MCPConnCard key={i} c={c} sshIdentities={sshIdentities} />)
           )}
         </div>
       )}

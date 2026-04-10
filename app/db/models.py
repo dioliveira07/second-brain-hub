@@ -133,6 +133,8 @@ class SSHIdentity(Base):
     account_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     plan: Mapped[str | None] = mapped_column(String(50), nullable=True)
     projeto: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    machine_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    machine_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
