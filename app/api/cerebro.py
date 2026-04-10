@@ -452,6 +452,51 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/dev/{dev}/projeto/{projeto:path}/contexto")
+async def get_dev_project_context(dev: str, projeto: str, db: AsyncSession = Depends(get_db)):
+    """Último contexto salvo para este dev+projeto (slug owner/repo)."""
+    result = await db.execute(
+        select(SessionContext)
+        .where(SessionContext.dev == dev, SessionContext.projeto == projeto)
+        .order_by(SessionContext.timestamp.desc())
+        .limit(1)
+    )
+    ctx = result.scalar_one_or_none()
+    if not ctx:
+        return {"found": False}
+    agora = datetime.now(timezone.utc)
+    minutos_atras = int((agora - ctx.timestamp).total_seconds() / 60)
+    return {
+        "found": True,
+        "branch": ctx.branch,
+        "arquivos": ctx.arquivos,
+        "ultimo_commit": ctx.ultimo_commit,
+        "timestamp": ctx.timestamp.isoformat(),
+        "minutos_atras": minutos_atras,
+    }
+
+
+@router.get("/projeto/{projeto:path}/devs-ativos")
+async def get_projeto_devs_ativos(projeto: str, db: AsyncSession = Depends(get_db)):
+    """Devs com sessão SSHIdentity ativa (<2h) no projeto."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+    result = await db.execute(
+        select(SSHIdentity)
+        .where(SSHIdentity.projeto == projeto, SSHIdentity.updated_at >= cutoff)
+        .order_by(SSHIdentity.updated_at.desc())
+    )
+    devs = result.scalars().all()
+    agora = datetime.now(timezone.utc)
+    return [
+        {
+            "dev": d.dev,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+            "minutos_atras": int((agora - d.updated_at).total_seconds() / 60) if d.updated_at else None,
+        }
+        for d in devs
+    ]
+
+
 @router.get("/afinidade")
 async def get_afinidade_geral(dias: int = 30, db: AsyncSession = Depends(get_db)):
     """Retorna tabela completa de afinidade dev × projeto."""
