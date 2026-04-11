@@ -335,34 +335,62 @@ export function DepsGraphClient() {
     SIM_EDGES.forEach((e) => { deg[e.s] = (deg[e.s] ?? 0) + 1; deg[e.t] = (deg[e.t] ?? 0) + 1; });
     const maxDeg = Math.max(...Object.values(deg), 1);
 
-    // ── Init nodes in layer-grouped radial sectors (like G6 radial sortBy:comboId) ─
-    const LAYER_ORDER = ["entry","pages","components","wizard","hooks","lib","utils","ui","backend","operator","core","orphan"];
-    const byLayer: Record<string, typeof SIM_NODES[0][]> = {};
-    for (const n of SIM_NODES) {
-      if (!byLayer[n.layer]) byLayer[n.layer] = [];
-      byLayer[n.layer].push(n);
-    }
-    const activeLayers = LAYER_ORDER.filter((l) => byLayer[l]?.length > 0);
-    const sectorAngle  = (2 * Math.PI) / activeLayers.length;
+    // ── Concentric ring layout — same algorithm as G6 radial sortBy:comboId ──
+    // Each architectural layer maps to a ring level (distance from center).
+    // Within each ring nodes are sorted by LAYER_ORDER so same-layer nodes
+    // are adjacent, forming clearly visible category arcs on each ring.
+    const LAYER_TO_RING: Record<string, number> = {
+      entry:      0,
+      pages:      1,
+      components: 2,
+      wizard:     2,
+      backend:    2,
+      hooks:      3,
+      lib:        3,
+      operator:   3,
+      utils:      4,
+      ui:         4,
+      core:       4,
+      orphan:     5,
+    };
+    const RING_RADII = [0, 105, 195, 285, 365, 455];
+    const LAYER_ORDER = ["entry","pages","components","wizard","backend","hooks","lib","operator","utils","ui","core","orphan"];
 
+    // Group nodes by ring, sorted by LAYER_ORDER within each ring
+    const ringGroups: Record<number, typeof SIM_NODES[0][]> = {};
+    SIM_NODES.forEach((n) => {
+      const ring = LAYER_TO_RING[n.layer] ?? 4;
+      if (!ringGroups[ring]) ringGroups[ring] = [];
+      ringGroups[ring].push(n);
+    });
+    Object.values(ringGroups).forEach((arr) => {
+      arr.sort((a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer));
+    });
+
+    // Place nodes on rings
     const nodes: PNode[] = SIM_NODES.map((n) => {
-      const d          = deg[n.id] ?? 0;
-      const r          = 7 + (d / maxDeg) * 18;
-      const layerIdx   = activeLayers.indexOf(n.layer);
-      const siblings   = byLayer[n.layer];
-      const sibIdx     = siblings.indexOf(n);
-      const baseAngle  = layerIdx * sectorAngle;
-      const spread     = sectorAngle * 0.65;
-      const angleOff   = siblings.length > 1 ? (sibIdx / (siblings.length - 1) - 0.5) * spread : 0;
-      const angle      = baseAngle + angleOff;
-      const radius     = n.layer === "orphan" ? 390 : n.layer === "entry" ? 120 : 200 + (1 - d / maxDeg) * 110;
+      const d      = deg[n.id] ?? 0;
+      const r      = 7 + (d / maxDeg) * 18;
+      const ring   = LAYER_TO_RING[n.layer] ?? 4;
+      const group  = ringGroups[ring];
+      const idx    = group.indexOf(n);
+      const total  = group.length;
+      const angle  = (idx / total) * 2 * Math.PI - Math.PI / 2;
+      const radius = RING_RADII[ring] ?? 455;
+      // Ring 0 special case: spread entry nodes slightly so they don't stack
+      const rEff   = ring === 0 && total > 1 ? 30 : radius;
       return {
         id: n.id, label: n.label, layer: n.layer,
-        x: cx + Math.cos(angle) * radius,
-        y: cy + Math.sin(angle) * radius,
+        x: cx + Math.cos(angle) * rEff,
+        y: cy + Math.sin(angle) * rEff,
         vx: 0, vy: 0, r, pinned: false, degree: d,
       };
     });
+
+    // Store anchor positions (ring targets) for spring-back after physics
+    const anchorX: Record<string, number> = {};
+    const anchorY: Record<string, number> = {};
+    nodes.forEach((n) => { anchorX[n.id] = n.x; anchorY[n.id] = n.y; });
 
     const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
 
@@ -374,47 +402,49 @@ export function DepsGraphClient() {
     const S = stateRef.current;
 
     // ── Physics tick ──────────────────────────────────────────────────────────
+    // Rings are already organized — physics only resolves overlaps and springs
+    // nodes back to their anchor positions. No gravity / strong repulsion.
     let tick = 0;
-    const MAX  = 500;
-    const A0   = 1.0;
-    const ADEC = 0.016;
+    const MAX = 120; // short convergence window, then loop just re-renders
 
     function physics() {
       if (tick >= MAX) return;
-      const alpha = A0 * Math.pow(1 - ADEC, tick++);
+      const alpha = Math.max(0, 1 - tick / MAX);
+      tick++;
 
-      // 1 — gravity to centre
+      // 1 — anchor spring: pull each node back to its ring target position
       for (const p of nodes) {
         if (p.pinned) continue;
-        p.vx += (cx - p.x) * 0.055 * alpha;
-        p.vy += (cy - p.y) * 0.055 * alpha;
+        p.vx += (anchorX[p.id] - p.x) * 0.18 * alpha;
+        p.vy += (anchorY[p.id] - p.y) * 0.18 * alpha;
       }
 
-      // 2 — repulsion (Barnes-Hut approximation: skip if very far)
+      // 2 — very weak repulsion (only for nearby overlap prevention)
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i], b = nodes[j];
           let dx = b.x - a.x || 0.1;
           let dy = b.y - a.y || 0.1;
           const d2 = dx * dx + dy * dy;
-          if (d2 > 250000) continue;          // skip very distant pairs
-          const d  = Math.sqrt(d2);
-          const f  = (8000 * alpha) / d2;
+          const minD = (a.r + b.r) * 3.5;
+          if (d2 > minD * minD) continue; // only apply to close pairs
+          const d  = Math.sqrt(d2) || 0.1;
+          const f  = (1200 * alpha) / d2;
           dx /= d; dy /= d;
           if (!a.pinned) { a.vx -= dx * f; a.vy -= dy * f; }
           if (!b.pinned) { b.vx += dx * f; b.vy += dy * f; }
         }
       }
 
-      // 3 — link spring
+      // 3 — very weak link spring (cosmetic, won't override anchor)
       for (const e of SIM_EDGES) {
         const a = byId[e.s], b = byId[e.t];
         if (!a || !b) continue;
         const dx   = b.x - a.x;
         const dy   = b.y - a.y;
         const d    = Math.sqrt(dx * dx + dy * dy) || 0.1;
-        const IDEAL = 100;
-        const str  = ((d - IDEAL) / d) * 0.4 * alpha;
+        const IDEAL = 120;
+        const str  = ((d - IDEAL) / d) * 0.025 * alpha;
         if (!a.pinned) { a.vx += dx * str; a.vy += dy * str; }
         if (!b.pinned) { b.vx -= dx * str; b.vy -= dy * str; }
       }
@@ -470,8 +500,8 @@ export function DepsGraphClient() {
       ctx.restore();
     }
 
-    // ── Pre-run simulation silently so first render is already stable ─────────
-    for (let i = 0; i < 260; i++) physics();
+    // ── Pre-run to resolve any initial overlaps before first render ───────────
+    for (let i = 0; i < 60; i++) physics();
 
     // ── Loop ──────────────────────────────────────────────────────────────────
     function loop() {
