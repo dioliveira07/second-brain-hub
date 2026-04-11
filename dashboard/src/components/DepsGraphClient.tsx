@@ -256,7 +256,7 @@ function buildG6Data(): any {
         iconFontSize:  n.layer === "entry" ? 11 : 8,
         iconFontFamily: "'Fira Code', monospace",
       },
-      data: { layer: n.layer, label: n.label, imports: n.imports },
+      data: { layer: n.layer, label: n.label, imports: n.imports, comboId: n.layer },
     };
   });
 
@@ -313,15 +313,15 @@ export function DepsGraphClient() {
           data:        buildG6Data(),
 
           layout: {
-            type:           "force",
-            linkDistance:   80,
-            nodeStrength:   -320,
-            edgeStrength:   0.4,
-            collideStrength: 0.85,
-            nodeSize:       40,
-            preventOverlap:  true,
-            alpha:           0.5,
-            alphaDecay:      0.02,
+            type:                       "radial",
+            unitRadius:                 120,
+            linkDistance:               220,
+            nodeSize:                   44,
+            preventOverlap:             true,
+            maxPreventOverlapIteration: 800,
+            strictRadial:               false,
+            sortBy:                     "layer",
+            sortStrength:               60,
           },
 
           node: {
