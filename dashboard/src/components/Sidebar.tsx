@@ -3,14 +3,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Network, FolderGit2,
-  BookOpen, GitCommitHorizontal, Activity, Brain, Newspaper, Workflow,
+  BookOpen, GitCommitHorizontal, Activity, Brain, Newspaper,
 } from "lucide-react";
 import { GlitchText } from "@/components/reactbits/GlitchText";
 
 const NAV = [
   { href: "/",         label: "Dashboard",    Icon: LayoutDashboard },
   { href: "/graph",    label: "Grafo",        Icon: Network         },
-  { href: "/graph/deps", label: "Deps Graph", Icon: Workflow        },
   { href: "/repos",    label: "Repositórios", Icon: FolderGit2      },
   { href: "/playbook", label: "Playbook",     Icon: BookOpen        },
   { href: "/timeline", label: "Timeline",     Icon: GitCommitHorizontal },
