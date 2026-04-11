@@ -17,13 +17,10 @@ export default function DepsGraphPage() {
               </span>
             </div>
             <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", margin: 0 }}>
-              File Dependency Graph
+              Repository Dependency Graph
             </h2>
             <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)", margin: "0.3rem 0 0" }}>
-              Visualização de imports entre arquivos —{" "}
-              <span style={{ color: "var(--cyan)" }}>cotacao-inteligente-crm</span>
-              {" · "}
-              <span style={{ color: "#a78bfa" }}>pixel-perfect</span>
+              Dependências inter-repositório — <span style={{ color: "var(--cyan)" }}>29 repos indexados</span>
             </p>
           </div>
 
@@ -61,15 +58,11 @@ export default function DepsGraphPage() {
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--dim)" }}>camadas:</span>
           </div>
           {[
-            { label: "pages",      color: "#06b6d4" },
-            { label: "components", color: "#a78bfa" },
-            { label: "hooks",      color: "#22c55e" },
-            { label: "lib",        color: "#fbbf24" },
-            { label: "utils",      color: "#f97316" },
-            { label: "backend",    color: "#f87171" },
-            { label: "operator",   color: "#fb923c" },
-            { label: "core",       color: "#e2e8f0" },
-            { label: "orphan",     color: "#334155" },
+            { label: "Full-stack",  color: "#a78bfa" },
+            { label: "Backend",     color: "#f87171" },
+            { label: "Frontend",    color: "#06b6d4" },
+            { label: "Tooling",     color: "#fbbf24" },
+            { label: "Infra / Ops", color: "#fb923c" },
           ].map(({ label, color }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}`, display: "inline-block" }} />

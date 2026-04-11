@@ -1,298 +1,114 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, FileCode, ArrowRight, GitBranch, Layers } from "lucide-react";
+import { X, GitBranch, ArrowRight, Layers } from "lucide-react";
 
-// ─── Layer colours ────────────────────────────────────────────────────────────
-const LAYERS: Record<string, { color: string; label: string }> = {
-  entry:      { color: "#06b6d4", label: "entry"      },
-  pages:      { color: "#38bdf8", label: "pages"      },
-  components: { color: "#a78bfa", label: "components" },
-  wizard:     { color: "#c084fc", label: "wizard"     },
-  hooks:      { color: "#22c55e", label: "hooks"      },
-  lib:        { color: "#fbbf24", label: "lib"        },
-  utils:      { color: "#f97316", label: "utils"      },
-  ui:         { color: "#475569", label: "ui"         },
-  backend:    { color: "#f87171", label: "backend"    },
-  operator:   { color: "#fb923c", label: "operator"   },
-  core:       { color: "#e2e8f0", label: "core"       },
-  orphan:     { color: "#334155", label: "orphan"     },
+// ─── Categories (layer equivalent for repo-level graph) ───────────────────────
+const CATS: Record<string, { color: string; label: string }> = {
+  fullstack: { color: "#a78bfa", label: "Full-stack"  },
+  backend:   { color: "#f87171", label: "Backend"     },
+  frontend:  { color: "#06b6d4", label: "Frontend"    },
+  tooling:   { color: "#fbbf24", label: "Tooling"     },
+  infra:     { color: "#fb923c", label: "Infra / Ops" },
 };
 
-// ─── Repos ────────────────────────────────────────────────────────────────────
-// Cada repo tem um fill-tint próprio para diferenciação visual
-const REPOS: Record<string, { label: string; tint: string; icon: string }> = {
-  crm: { label: "cotacao-inteligente-crm", tint: "0d", icon: "⬡" },
-  pp:  { label: "pixel-perfect",           tint: "1a", icon: "◈" },
-};
-
-// ─── Nodes ────────────────────────────────────────────────────────────────────
-const SIM_NODES = [
-  { id: "main",         label: "main.tsx",                        layer: "entry"      },
-  { id: "App",          label: "App.tsx",                         layer: "entry"      },
-  { id: "Index",        label: "pages/Index.tsx",                 layer: "pages"      },
-  { id: "NotFound",     label: "pages/NotFound.tsx",              layer: "pages"      },
-  { id: "AppHeader",    label: "AppHeader.tsx",                   layer: "components" },
-  { id: "QuoteForm",    label: "QuoteForm.tsx",                   layer: "components" },
-  { id: "QuoteResults", label: "QuoteResults.tsx",                layer: "components" },
-  { id: "HistoryPanel", label: "HistoryPanel.tsx",                layer: "components" },
-  { id: "IntelPanel",   label: "IntelPanel.tsx",                  layer: "components" },
-  { id: "SistemaPanel", label: "SistemaPanel.tsx",                layer: "components" },
-  { id: "StatusPanel",  label: "StatusPanel.tsx",                 layer: "components" },
-  { id: "StatusBanner", label: "StatusBanner.tsx",                layer: "components" },
-  { id: "NavLink",      label: "NavLink.tsx",                     layer: "components" },
-  { id: "OperatorLogos",label: "OperatorLogos.tsx",               layer: "components" },
-  { id: "WizardSteps",  label: "wizard/WizardSteps.tsx",          layer: "wizard"     },
-  { id: "StepEmpresa",  label: "wizard/StepEmpresa.tsx",          layer: "wizard"     },
-  { id: "StepBenef",    label: "wizard/StepBenef.tsx",            layer: "wizard"     },
-  { id: "StepPref",     label: "wizard/StepPref.tsx",             layer: "wizard"     },
-  { id: "StepRevisao",  label: "wizard/StepRevisao.tsx",          layer: "wizard"     },
-  { id: "useToast",     label: "hooks/use-toast.ts",              layer: "hooks"      },
-  { id: "useMobile",    label: "hooks/use-mobile.tsx",            layer: "hooks"      },
-  { id: "cotacao",      label: "lib/cotacao.ts",                  layer: "lib"        },
-  { id: "inteligencia", label: "lib/inteligencia.ts",             layer: "lib"        },
-  { id: "history",      label: "lib/history.ts",                  layer: "lib"        },
-  { id: "pdfGenerator", label: "lib/pdfGenerator.ts",             layer: "lib"        },
-  { id: "supabaseSvc",  label: "lib/supabaseService.ts",          layer: "lib"        },
-  { id: "cnpjLookup",   label: "lib/cnpjLookup.ts",               layer: "lib"        },
-  { id: "types",        label: "lib/types.ts",                    layer: "utils"      },
-  { id: "utils",        label: "lib/utils.ts",                    layer: "utils"      },
-  { id: "supabase",     label: "lib/supabase.ts",                 layer: "utils"      },
-  { id: "ui_button",    label: "ui/button.tsx",                   layer: "ui"         },
-  { id: "ui_input",     label: "ui/input.tsx",                    layer: "ui"         },
-  { id: "ui_select",    label: "ui/select.tsx",                   layer: "ui"         },
-  { id: "ui_card",      label: "ui/card.tsx",                     layer: "ui"         },
-  { id: "ui_table",     label: "ui/table.tsx",                    layer: "ui"         },
-  { id: "ui_badge",     label: "ui/badge.tsx",                    layer: "ui"         },
-  { id: "ui_form",      label: "ui/form.tsx",                     layer: "ui"         },
-  { id: "ui_dialog",    label: "ui/dialog.tsx",                   layer: "ui"         },
-  { id: "be_api",       label: "backend/api.js",                  layer: "backend"    },
-  { id: "be_logger",    label: "backend/logger.js",               layer: "core"       },
-  { id: "be_health",    label: "backend/health_manager.js",       layer: "backend"    },
-  { id: "be_mcp",       label: "backend/mcp-server.js",           layer: "backend"    },
-  { id: "be_agent",     label: "backend/agent-analyzer.js",       layer: "backend"    },
-  { id: "be_cdp",       label: "backend/load_cookies_cdp.js",     layer: "core"       },
-  { id: "amil_prod",    label: "backend/amil_producao.js",        layer: "operator"   },
-  { id: "amil_pool",    label: "backend/amil_pool.js",            layer: "operator"   },
-  { id: "amil_login",   label: "backend/amil_login_module.js",    layer: "operator"   },
-  { id: "amil_cookie",  label: "backend/amil_cookie_extractor.js",layer: "operator"   },
-  { id: "amil_cache",   label: "backend/amil_cache_precos.js",    layer: "operator"   },
-  { id: "brad_prod",    label: "backend/bradesco_producao.js",    layer: "operator"   },
-  { id: "brad_login",   label: "backend/bradesco_login.js",       layer: "operator"   },
-  { id: "porto_prod",   label: "backend/porto_producao.js",       layer: "operator"   },
-  { id: "porto_sess",   label: "backend/porto_session_manager.js",layer: "operator"   },
-  { id: "porto_cdp_e",  label: "backend/porto_cdp_extractor.js",  layer: "operator"   },
-  { id: "porto_cdp_l",  label: "backend/porto_cdp_login.js",      layer: "operator"   },
-  { id: "porto_login",  label: "backend/porto_login.js",          layer: "operator"   },
-  { id: "sul_coleta",   label: "backend/sulamerica_coleta.js",    layer: "operator"   },
-  { id: "sul_login",    label: "backend/sulamerica_login.js",     layer: "operator"   },
-  { id: "eslint_cfg",   label: "eslint.config.js",                layer: "orphan"     },
-  { id: "tailwind_cfg", label: "tailwind.config.ts",              layer: "orphan"     },
-  { id: "vite_cfg",     label: "vite.config.ts",                  layer: "orphan"     },
-  { id: "vitest_cfg",   label: "vitest.config.ts",                layer: "orphan"     },
-  { id: "postcss_cfg",  label: "postcss.config.js",               layer: "orphan"     },
-  { id: "pw_cfg",       label: "playwright.config.ts",            layer: "orphan"     },
-  { id: "test_setup",   label: "src/test/setup.ts",               layer: "orphan"     },
-  { id: "gmail_auth",   label: "backend/gmail_auth_local.js",     layer: "orphan"     },
+// ─── All 29 repos ─────────────────────────────────────────────────────────────
+const REPO_NODES = [
+  // ── Full-stack ──────────────────────────────────────────────────────────────
+  { id: "fluxionai",          label: "fluxionai",                   cat: "fullstack", desc: "Plataforma de IA conversacional com agentes e memória"       },
+  { id: "fluxiom-crm",        label: "fluxiom-crm",                 cat: "fullstack", desc: "CRM completo com automações e integrações"                   },
+  { id: "cotacao-crm",        label: "cotacao-inteligente-crm",     cat: "fullstack", desc: "CRM de cotação de planos de saúde com IA"                    },
+  { id: "second-brain-hub",   label: "second-brain-hub",            cat: "fullstack", desc: "Hub de conhecimento e memória de repositórios"               },
+  { id: "autoconect-oficial", label: "autoconect-oficial",          cat: "fullstack", desc: "Versão oficial do sistema de conexão automática"             },
+  { id: "autoconect",         label: "autoconect",                  cat: "fullstack", desc: "Sistema de conexão automática (base)"                        },
+  { id: "laravel",            label: "laravel",                     cat: "fullstack", desc: "Projeto Laravel base"                                        },
+  { id: "innove-ledger",      label: "innove-ledger",               cat: "fullstack", desc: "Ledger financeiro com controle de transações"                },
+  { id: "faturamento",        label: "faturamento-associacoes",     cat: "fullstack", desc: "Módulo de faturamento para associações"                      },
+  { id: "associacoes",        label: "associacoes-projeto",         cat: "fullstack", desc: "Sistema de gestão de associações"                            },
+  { id: "associacoes-fork",   label: "associacoes-projeto-883296f8",cat: "fullstack", desc: "Fork do projeto de associações"                              },
+  { id: "criacao-projetos",   label: "criacao-de-projetos",         cat: "fullstack", desc: "Scaffold e criação automatizada de projetos"                 },
+  // ── Backend ─────────────────────────────────────────────────────────────────
+  { id: "garimpo",            label: "garimpo-backend",             cat: "backend",   desc: "Backend de busca e indexação de dados (garimpo)"             },
+  { id: "nfse-proxy",         label: "nfse-proxy",                  cat: "backend",   desc: "Proxy para emissão de NFS-e"                                 },
+  { id: "webhook-doutor",     label: "webhook-doutorSeguros",       cat: "backend",   desc: "Receptor de webhooks do DoutorSeguros"                       },
+  { id: "sistemainterno",     label: "sistemainterno",              cat: "backend",   desc: "Sistema interno de gestão"                                   },
+  // ── Frontend ────────────────────────────────────────────────────────────────
+  { id: "pixel-perfect",      label: "pixel-perfect-clone-9021",    cat: "frontend",  desc: "Clone pixel-perfect para comparação de UI"                   },
+  { id: "valorize",           label: "valorize-teste",              cat: "frontend",  desc: "App de testes para o produto Valorize"                       },
+  { id: "mind-growth",        label: "mind-growth-diagnostics",     cat: "frontend",  desc: "Diagnósticos de crescimento pessoal"                         },
+  { id: "batalha",            label: "batalhadethor",               cat: "frontend",  desc: "Jogo de batalha temático"                                    },
+  { id: "designertools",      label: "designerferramentas",         cat: "frontend",  desc: "Ferramentas para designers"                                  },
+  // ── Tooling ─────────────────────────────────────────────────────────────────
+  { id: "skills",             label: "skills",                      cat: "tooling",   desc: "Vault de skills do Claude Code"                              },
+  { id: "playbooks",          label: "playbooks",                   cat: "tooling",   desc: "Playbooks de processos e decisões"                           },
+  { id: "bugs",               label: "bugs",                        cat: "tooling",   desc: "Tracker de bugs e issues"                                    },
+  { id: "n8n-workflows",      label: "n8n-workflows",               cat: "tooling",   desc: "Workflows de automação no n8n"                               },
+  { id: "project-duplicator", label: "project-duplicator",          cat: "tooling",   desc: "Utilitário de duplicação de projetos"                        },
+  { id: "my-first-repo",      label: "my-first-repository",         cat: "tooling",   desc: "Repositório inicial"                                         },
+  // ── Infra ────────────────────────────────────────────────────────────────────
+  { id: "github-connector",   label: "github-connector-hub",        cat: "infra",     desc: "Conector GitHub para webhooks e indexação"                   },
+  { id: "n8n",                label: "n8n",                         cat: "infra",     desc: "Plataforma n8n self-hosted"                                  },
 ];
 
-const SIM_EDGES = [
-  { s: "main",         t: "App"          },
-  { s: "App",          t: "Index"        },
-  { s: "App",          t: "NotFound"     },
-  { s: "App",          t: "AppHeader"    },
-  { s: "Index",        t: "QuoteForm"    },
-  { s: "Index",        t: "QuoteResults" },
-  { s: "Index",        t: "HistoryPanel" },
-  { s: "Index",        t: "IntelPanel"   },
-  { s: "Index",        t: "SistemaPanel" },
-  { s: "Index",        t: "StatusPanel"  },
-  { s: "Index",        t: "WizardSteps"  },
-  { s: "WizardSteps",  t: "StepEmpresa"  },
-  { s: "WizardSteps",  t: "StepBenef"   },
-  { s: "WizardSteps",  t: "StepPref"    },
-  { s: "WizardSteps",  t: "StepRevisao" },
-  { s: "QuoteForm",    t: "cotacao"      },
-  { s: "QuoteForm",    t: "types"        },
-  { s: "QuoteForm",    t: "useMobile"    },
-  { s: "QuoteForm",    t: "ui_select"    },
-  { s: "QuoteForm",    t: "ui_input"     },
-  { s: "QuoteForm",    t: "ui_button"    },
-  { s: "QuoteForm",    t: "useToast"     },
-  { s: "QuoteResults", t: "cotacao"      },
-  { s: "QuoteResults", t: "pdfGenerator" },
-  { s: "QuoteResults", t: "types"        },
-  { s: "QuoteResults", t: "ui_card"      },
-  { s: "QuoteResults", t: "ui_badge"     },
-  { s: "HistoryPanel", t: "history"      },
-  { s: "HistoryPanel", t: "types"        },
-  { s: "HistoryPanel", t: "ui_table"     },
-  { s: "IntelPanel",   t: "inteligencia" },
-  { s: "IntelPanel",   t: "types"        },
-  { s: "SistemaPanel", t: "supabaseSvc"  },
-  { s: "SistemaPanel", t: "types"        },
-  { s: "AppHeader",    t: "NavLink"      },
-  { s: "AppHeader",    t: "OperatorLogos"},
-  { s: "StatusPanel",  t: "supabaseSvc"  },
-  { s: "StepEmpresa",  t: "cotacao"      },
-  { s: "StepEmpresa",  t: "cnpjLookup"   },
-  { s: "StepEmpresa",  t: "types"        },
-  { s: "StepBenef",    t: "types"        },
-  { s: "StepPref",     t: "cotacao"      },
-  { s: "StepRevisao",  t: "types"        },
-  { s: "useToast",     t: "ui_dialog"    },
-  { s: "cotacao",      t: "supabase"     },
-  { s: "cotacao",      t: "types"        },
-  { s: "cotacao",      t: "utils"        },
-  { s: "inteligencia", t: "cotacao"      },
-  { s: "inteligencia", t: "types"        },
-  { s: "history",      t: "types"        },
-  { s: "history",      t: "utils"        },
-  { s: "pdfGenerator", t: "types"        },
-  { s: "pdfGenerator", t: "utils"        },
-  { s: "supabaseSvc",  t: "supabase"     },
-  { s: "supabaseSvc",  t: "types"        },
-  { s: "cnpjLookup",   t: "utils"        },
-  { s: "ui_form",      t: "ui_input"     },
-  { s: "ui_form",      t: "ui_button"    },
-  { s: "be_mcp",       t: "be_api"       },
-  { s: "be_mcp",       t: "be_logger"    },
-  { s: "be_mcp",       t: "be_agent"     },
-  { s: "be_api",       t: "be_logger"    },
-  { s: "be_api",       t: "be_health"    },
-  { s: "be_api",       t: "amil_prod"    },
-  { s: "be_api",       t: "brad_prod"    },
-  { s: "be_api",       t: "porto_prod"   },
-  { s: "be_api",       t: "sul_coleta"   },
-  { s: "be_health",    t: "be_logger"    },
-  { s: "be_agent",     t: "be_logger"    },
-  { s: "amil_prod",    t: "amil_pool"    },
-  { s: "amil_prod",    t: "be_logger"    },
-  { s: "amil_prod",    t: "amil_cache"   },
-  { s: "amil_pool",    t: "amil_login"   },
-  { s: "amil_pool",    t: "be_logger"    },
-  { s: "amil_login",   t: "amil_cookie"  },
-  { s: "amil_login",   t: "be_cdp"       },
-  { s: "amil_login",   t: "be_logger"    },
-  { s: "brad_prod",    t: "brad_login"   },
-  { s: "brad_prod",    t: "be_logger"    },
-  { s: "brad_login",   t: "be_cdp"       },
-  { s: "porto_prod",   t: "porto_sess"   },
-  { s: "porto_prod",   t: "be_logger"    },
-  { s: "porto_sess",   t: "porto_cdp_e"  },
-  { s: "porto_sess",   t: "porto_cdp_l"  },
-  { s: "porto_sess",   t: "be_logger"    },
-  { s: "porto_cdp_e",  t: "be_cdp"       },
-  { s: "porto_cdp_l",  t: "porto_login"  },
-  { s: "porto_cdp_l",  t: "be_cdp"       },
-  { s: "sul_coleta",   t: "sul_login"    },
-  { s: "sul_coleta",   t: "be_logger"    },
-  { s: "sul_login",    t: "be_cdp"       },
-];
-
-// ─── pixel-perfect repo ───────────────────────────────────────────────────────
-const PP_NODES = [
-  { id: "pp_main",         label: "main.tsx",                   layer: "entry"      },
-  { id: "pp_App",          label: "App.tsx",                    layer: "entry"      },
-  { id: "pp_CompareView",  label: "pages/CompareView.tsx",      layer: "pages"      },
-  { id: "pp_Components",   label: "pages/ComponentsLibrary.tsx",layer: "pages"      },
-  { id: "pp_Settings",     label: "pages/Settings.tsx",         layer: "pages"      },
-  { id: "pp_Canvas",       label: "CompareCanvas.tsx",          layer: "components" },
-  { id: "pp_DiffOverlay",  label: "DiffOverlay.tsx",            layer: "components" },
-  { id: "pp_Preview",      label: "ComponentPreview.tsx",       layer: "components" },
-  { id: "pp_TokenPanel",   label: "TokenPanel.tsx",             layer: "components" },
-  { id: "pp_ColorSwatch",  label: "ColorSwatch.tsx",            layer: "components" },
-  { id: "pp_LayerTree",    label: "LayerTree.tsx",              layer: "components" },
-  { id: "pp_Annotations",  label: "AnnotationList.tsx",         layer: "components" },
-  { id: "pp_ExportDialog", label: "ExportDialog.tsx",           layer: "components" },
-  { id: "pp_usePixelDiff", label: "hooks/usePixelDiff.ts",      layer: "hooks"      },
-  { id: "pp_useZoom",      label: "hooks/useZoom.ts",           layer: "hooks"      },
-  { id: "pp_useAnnotation",label: "hooks/useAnnotation.ts",     layer: "hooks"      },
-  { id: "pp_diffEngine",   label: "lib/diffEngine.ts",          layer: "lib"        },
-  { id: "pp_imageLoader",  label: "lib/imageLoader.ts",         layer: "lib"        },
-  { id: "pp_exportPDF",    label: "lib/exportPDF.ts",           layer: "lib"        },
-  { id: "pp_tokenParser",  label: "lib/tokenParser.ts",         layer: "lib"        },
-  { id: "pp_colorMath",    label: "utils/colorMath.ts",         layer: "utils"      },
-  { id: "pp_measureUtils", label: "utils/measureUtils.ts",      layer: "utils"      },
-  { id: "pp_fileUtils",    label: "utils/fileUtils.ts",         layer: "utils"      },
-  { id: "pp_btn",          label: "ui/button.tsx",              layer: "ui"         },
-  { id: "pp_dialog",       label: "ui/dialog.tsx",              layer: "ui"         },
-  { id: "pp_tooltip",      label: "ui/tooltip.tsx",             layer: "ui"         },
-  { id: "pp_vite",         label: "vite.config.ts",             layer: "orphan"     },
-  { id: "pp_eslint",       label: "eslint.config.js",           layer: "orphan"     },
-];
-
-const PP_EDGES = [
-  { s: "pp_main",         t: "pp_App"          },
-  { s: "pp_App",          t: "pp_CompareView"  },
-  { s: "pp_App",          t: "pp_Components"   },
-  { s: "pp_App",          t: "pp_Settings"     },
-  { s: "pp_CompareView",  t: "pp_Canvas"       },
-  { s: "pp_CompareView",  t: "pp_DiffOverlay"  },
-  { s: "pp_CompareView",  t: "pp_LayerTree"    },
-  { s: "pp_CompareView",  t: "pp_Annotations"  },
-  { s: "pp_Components",   t: "pp_Preview"      },
-  { s: "pp_Components",   t: "pp_TokenPanel"   },
-  { s: "pp_Components",   t: "pp_ColorSwatch"  },
-  { s: "pp_Settings",     t: "pp_tokenParser"  },
-  { s: "pp_Settings",     t: "pp_exportPDF"    },
-  { s: "pp_Canvas",       t: "pp_usePixelDiff" },
-  { s: "pp_Canvas",       t: "pp_useZoom"      },
-  { s: "pp_Canvas",       t: "pp_imageLoader"  },
-  { s: "pp_DiffOverlay",  t: "pp_usePixelDiff" },
-  { s: "pp_DiffOverlay",  t: "pp_colorMath"    },
-  { s: "pp_TokenPanel",   t: "pp_tokenParser"  },
-  { s: "pp_TokenPanel",   t: "pp_ColorSwatch"  },
-  { s: "pp_LayerTree",    t: "pp_useAnnotation"},
-  { s: "pp_Annotations",  t: "pp_useAnnotation"},
-  { s: "pp_Annotations",  t: "pp_exportPDF"    },
-  { s: "pp_ExportDialog", t: "pp_exportPDF"    },
-  { s: "pp_ExportDialog", t: "pp_fileUtils"    },
-  { s: "pp_ExportDialog", t: "pp_dialog"       },
-  { s: "pp_usePixelDiff", t: "pp_diffEngine"   },
-  { s: "pp_usePixelDiff", t: "pp_colorMath"    },
-  { s: "pp_useZoom",      t: "pp_measureUtils" },
-  { s: "pp_useAnnotation",t: "pp_fileUtils"    },
-  { s: "pp_diffEngine",   t: "pp_colorMath"    },
-  { s: "pp_diffEngine",   t: "pp_measureUtils" },
-  { s: "pp_imageLoader",  t: "pp_fileUtils"    },
-  { s: "pp_tokenParser",  t: "pp_colorMath"    },
-  { s: "pp_Preview",      t: "pp_tokenParser"  },
-  { s: "pp_Preview",      t: "pp_btn"          },
-  { s: "pp_ColorSwatch",  t: "pp_colorMath"    },
-  { s: "pp_ColorSwatch",  t: "pp_tooltip"      },
-];
-
-// ─── All nodes / edges merged ─────────────────────────────────────────────────
-const ALL_NODES = [
-  ...SIM_NODES.map((n) => ({ ...n, repo: "crm" })),
-  ...PP_NODES.map((n)  => ({ ...n, repo: "pp"  })),
-];
-const ALL_EDGES = [
-  ...SIM_EDGES.map((e) => ({ ...e, repo: "crm" })),
-  ...PP_EDGES.map((e)  => ({ ...e, repo: "pp"  })),
+// ─── Inter-repo dependency edges ──────────────────────────────────────────────
+// Edge = "s depende de / consome t"
+const REPO_EDGES = [
+  // Infra base
+  { s: "n8n-workflows",      t: "n8n",                desc: "workflows rodam no n8n"              },
+  { s: "second-brain-hub",   t: "github-connector",   desc: "indexação via github-connector"      },
+  { s: "criacao-projetos",   t: "github-connector",   desc: "cria repos via connector"            },
+  // CRM / negócios
+  { s: "cotacao-crm",        t: "webhook-doutor",     desc: "envia cotações via webhook"          },
+  { s: "cotacao-crm",        t: "garimpo",            desc: "busca dados no garimpo"              },
+  { s: "fluxiom-crm",        t: "nfse-proxy",         desc: "emite NFS-e via proxy"               },
+  { s: "fluxiom-crm",        t: "garimpo",            desc: "indexação de leads no garimpo"       },
+  { s: "sistemainterno",     t: "fluxiom-crm",        desc: "integra com o CRM"                   },
+  { s: "webhook-doutor",     t: "sistemainterno",     desc: "alimenta sistema interno"            },
+  // Faturamento / associações
+  { s: "faturamento",        t: "nfse-proxy",         desc: "emite notas fiscais"                 },
+  { s: "faturamento",        t: "associacoes",        desc: "módulo de billing das associações"   },
+  { s: "associacoes-fork",   t: "associacoes",        desc: "fork do projeto base"                },
+  { s: "innove-ledger",      t: "nfse-proxy",         desc: "integra NFS-e para transações"       },
+  // Autoconect
+  { s: "autoconect-oficial", t: "autoconect",         desc: "versão oficial sobre a base"         },
+  // Brain / IA
+  { s: "fluxionai",          t: "second-brain-hub",   desc: "alimenta hub com memória de IA"      },
+  { s: "garimpo",            t: "second-brain-hub",   desc: "dados indexados no hub"              },
+  { s: "mind-growth",        t: "fluxionai",          desc: "usa IA do fluxionai"                 },
+  // n8n automações
+  { s: "n8n-workflows",      t: "webhook-doutor",     desc: "dispara webhooks via n8n"            },
+  { s: "n8n-workflows",      t: "fluxiom-crm",        desc: "automação de CRM via n8n"            },
+  { s: "n8n-workflows",      t: "cotacao-crm",        desc: "automação de cotações"               },
+  // Tooling → Hub
+  { s: "bugs",               t: "second-brain-hub",   desc: "bugs indexados no hub"               },
+  { s: "skills",             t: "second-brain-hub",   desc: "skills indexadas no hub"             },
+  { s: "playbooks",          t: "second-brain-hub",   desc: "playbooks indexados no hub"          },
+  // Frontend
+  { s: "designertools",      t: "pixel-perfect",      desc: "usa pixel-perfect para comparação"   },
+  { s: "criacao-projetos",   t: "laravel",            desc: "scaffolda projetos Laravel"          },
+  { s: "valorize",           t: "sistemainterno",     desc: "testa contra sistema interno"        },
 ];
 
 // ─── Selection detail ─────────────────────────────────────────────────────────
-interface SelNode {
-  id:         string;
-  label:      string;
-  layer:      string;
-  repo:       string;
-  importsTo:  string[];
-  importedBy: string[];
+interface SelRepo {
+  id:          string;
+  label:       string;
+  cat:         string;
+  desc:        string;
+  dependsOn:   string[];  // repos que este consome
+  usedBy:      string[];  // repos que consomem este
 }
 
-// ─── Sidebar (full-height, matches GraphClient NodeSidebar) ───────────────────
-function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) {
-  const accent = LAYERS[node.layer]?.color ?? "#5a7a9a";
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+function RepoSidebar({ node, onClose }: { node: SelRepo; onClose: () => void }) {
+  const accent = CATS[node.cat]?.color ?? "#5a7a9a";
 
   return (
     <div
       style={{
         position:      "absolute",
         top: 0, right: 0, bottom: 0,
-        width:         280,
+        width:         300,
         background:    "rgba(2,6,23,0.97)",
         borderLeft:    `1px solid ${accent}30`,
         backdropFilter:"blur(20px)",
@@ -303,29 +119,20 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
         boxShadow:     `-8px 0 32px ${accent}10`,
       }}
     >
-      {/* Linha neon topo */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${accent}88, transparent)` }} />
 
       {/* Header */}
       <div style={{ padding: "1rem", borderBottom: `1px solid ${accent}18`, display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
         <div style={{ width: 36, height: 36, borderRadius: 8, background: `${accent}12`, border: `1px solid ${accent}33`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-          <FileCode size={16} color={accent} />
+          <GitBranch size={16} color={accent} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "var(--muted-foreground)", letterSpacing: "0.06em", marginBottom: "0.1rem" }}>
-              {REPOS[node.repo]?.label ?? node.repo}
-            </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
-              {LAYERS[node.layer]?.label}
-            </div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "0.9rem", fontWeight: 700, color: "var(--text)", wordBreak: "break-all", lineHeight: 1.3, textShadow: `0 0 10px ${accent}44` }}>
-            {node.label.split("/").pop()}
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+            {CATS[node.cat]?.label}
           </div>
-          {node.label.includes("/") && (
-            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)", marginTop: "0.1rem" }}>
-              {node.label.split("/").slice(0, -1).join("/")}
-            </div>
-          )}
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", wordBreak: "break-all", lineHeight: 1.3, textShadow: `0 0 10px ${accent}44` }}>
+            {node.label}
+          </div>
         </div>
         <button
           onClick={onClose}
@@ -339,30 +146,34 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: "0.85rem 1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {/* Layer badge */}
-        <div>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, background: `${accent}18`, border: `1px solid ${accent}44`, borderRadius: 4, padding: "2px 8px", letterSpacing: "0.08em" }}>
-            {LAYERS[node.layer]?.label}
-          </span>
-        </div>
+        {/* Desc */}
+        <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)", lineHeight: 1.6, margin: 0 }}>
+          {node.desc}
+        </p>
 
-        {/* Imports to */}
-        {node.importsTo.length > 0 && (
+        {/* Depende de */}
+        {node.dependsOn.length > 0 && (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
               <ArrowRight size={11} color="var(--cyan)" />
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                importa ({node.importsTo.length})
+                depende de ({node.dependsOn.length})
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              {node.importsTo.map((f) => {
-                const tgt = ALL_NODES.find((n) => n.label === f);
-                const c   = LAYERS[tgt?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+              {node.dependsOn.map((dep) => {
+                const edge = REPO_EDGES.find(e => e.s === node.id && REPO_NODES.find(n => n.id === e.t)?.label === dep);
+                const tgt  = REPO_NODES.find(n => n.label === dep);
+                const c    = CATS[tgt?.cat ?? "tooling"]?.color ?? "#5a7a9a";
                 return (
-                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.split("/").pop()}</span>
+                  <div key={dep} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "4px 8px", background: "var(--bg-panel)", borderRadius: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--text)" }}>{dep}</span>
+                    </div>
+                    {edge?.desc && (
+                      <span style={{ fontFamily: "var(--sans)", fontSize: "0.68rem", color: "var(--muted-foreground)", paddingLeft: 11 }}>{edge.desc}</span>
+                    )}
                   </div>
                 );
               })}
@@ -370,23 +181,23 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
           </div>
         )}
 
-        {/* Imported by */}
-        {node.importedBy.length > 0 && (
+        {/* Usado por */}
+        {node.usedBy.length > 0 && (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
               <GitBranch size={11} color="#a78bfa" />
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                importado por ({node.importedBy.length})
+                usado por ({node.usedBy.length})
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              {node.importedBy.map((f) => {
-                const src = ALL_NODES.find((n) => n.label === f);
-                const c   = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+              {node.usedBy.map((dep) => {
+                const src = REPO_NODES.find(n => n.label === dep);
+                const c   = CATS[src?.cat ?? "tooling"]?.color ?? "#5a7a9a";
                 return (
-                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
+                  <div key={dep} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", background: "var(--bg-panel)", borderRadius: 4 }}>
                     <div style={{ width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.split("/").pop()}</span>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--text)" }}>{dep}</span>
                   </div>
                 );
               })}
@@ -395,7 +206,6 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
         )}
       </div>
 
-      {/* Linha neon rodapé */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${accent}44, transparent)` }} />
     </div>
   );
@@ -407,20 +217,18 @@ export function DepsGraphClient() {
   const graphRef                        = useRef<unknown>(null);
   const [loading,      setLoading]      = useState(true);
   const [ready,        setReady]        = useState(false);
-  const [selNode,      setSelNode]      = useState<SelNode | null>(null);
+  const [selNode,      setSelNode]      = useState<SelRepo | null>(null);
 
   const zoomIn  = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = graphRef.current as any;
-    if (!g) return;
-    g.zoomTo?.((g.getZoom?.() ?? 1) * 1.3, undefined, { duration: 250 });
+    g?.zoomTo?.((g.getZoom?.() ?? 1) * 1.3, undefined, { duration: 250 });
   }, []);
 
   const zoomOut = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g = graphRef.current as any;
-    if (!g) return;
-    g.zoomTo?.((g.getZoom?.() ?? 1) / 1.3, undefined, { duration: 250 });
+    g?.zoomTo?.((g.getZoom?.() ?? 1) / 1.3, undefined, { duration: 250 });
   }, []);
 
   const fitView = useCallback(() => {
@@ -443,65 +251,55 @@ export function DepsGraphClient() {
 
         // ── Degree map ────────────────────────────────────────────────────────
         const deg: Record<string, number> = {};
-        ALL_NODES.forEach((n) => { deg[n.id] = 0; });
-        ALL_EDGES.forEach((e) => {
+        REPO_NODES.forEach((n) => { deg[n.id] = 0; });
+        REPO_EDGES.forEach((e) => {
           deg[e.s] = (deg[e.s] ?? 0) + 1;
           deg[e.t] = (deg[e.t] ?? 0) + 1;
         });
         const maxDeg = Math.max(...Object.values(deg), 1);
 
-        // ── Build G6 node/edge data ───────────────────────────────────────────
-        const gNodes = ALL_NODES.map((n) => {
-          const color    = LAYERS[n.layer]?.color ?? "#5a7a9a";
-          const repo     = REPOS[n.repo];
-          const d        = deg[n.id] ?? 0;
-          const size     = 20 + (d / maxDeg) * 24;
-          const name     = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? n.label;
-          const isHub    = d >= 5 || n.layer === "entry";
-          const tint     = repo.tint;
-          // repoLayer groups nodes by repo first, then by layer within the radial rings
-          const repoLayer = `${n.repo}-${n.layer}`;
+        // ── G6 nodes ──────────────────────────────────────────────────────────
+        const gNodes = REPO_NODES.map((n) => {
+          const color = CATS[n.cat]?.color ?? "#5a7a9a";
+          const d     = deg[n.id] ?? 0;
+          const size  = 24 + (d / maxDeg) * 26;
+          const isHub = d >= 4;
+          const name  = n.label.length > 18 ? n.label.slice(0, 17) + "…" : n.label;
 
           return {
             id:    n.id,
             style: {
               size,
-              fill:             isHub ? `${color}${tint}` : `${color}0a`,
+              fill:             isHub ? `${color}0d` : `${color}0a`,
               stroke:           color,
               lineWidth:        isHub ? 2.5 : 1.5,
               shadowColor:      color,
               shadowBlur:       isHub ? 20 : 10,
-              label:            isHub,
+              label:            isHub || d >= 2,
               labelText:        name,
               labelFill:        isHub ? color : "#94a3b8",
               labelFontFamily:  "'Fira Code', monospace",
               labelFontSize:    isHub ? 11 : 9,
-              labelMaxWidth:    150,
+              labelMaxWidth:    160,
               labelOffsetY:     6,
               labelWordWrap:    false,
               labelBackground:        true,
               labelBackgroundFill:    "rgba(2,6,23,0.85)",
               labelBackgroundRadius:  3,
               labelBackgroundPadding: [2, 7, 2, 7] as [number,number,number,number],
-              iconText:        repo.icon,
-              iconFill:        color,
-              iconFontSize:    isHub ? 11 : 9,
-              iconFontFamily:  "'Fira Code', monospace",
+              iconText:         "⬡",
+              iconFill:         color,
+              iconFontSize:     isHub ? 13 : 10,
+              iconFontFamily:   "'Fira Code', monospace",
             },
-            data: {
-              layer:      n.layer,
-              repo:       n.repo,
-              repoLabel:  repo.label,
-              fullLabel:  n.label,
-              degree:     d,
-              repoLayer,
-            },
+            data: { cat: n.cat, label: n.label, desc: n.desc, degree: d },
           };
         });
 
-        const gEdges = ALL_EDGES.map((e, i) => {
-          const src   = ALL_NODES.find((n) => n.id === e.s);
-          const color = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+        // ── G6 edges ──────────────────────────────────────────────────────────
+        const gEdges = REPO_EDGES.map((e, i) => {
+          const src   = REPO_NODES.find((n) => n.id === e.s);
+          const color = CATS[src?.cat ?? "tooling"]?.color ?? "#5a7a9a";
           return {
             id:     `edge-${i}`,
             source: e.s,
@@ -529,32 +327,20 @@ export function DepsGraphClient() {
 
           layout: {
             type:                       "radial",
-            nodeSize:                   44,
-            unitRadius:                 140,
-            linkDistance:               260,
+            nodeSize:                   50,
+            unitRadius:                 155,
+            linkDistance:               300,
             preventOverlap:             true,
             maxPreventOverlapIteration: 200,
-            sortBy:                     "repoLayer",  // groups by repo+layer on each ring
-            sortStrength:               70,
+            sortBy:                     "cat",
+            sortStrength:               45,
           },
 
           node: {
             type:  "circle",
             state: {
-              active: {
-                label:      true,
-                lineWidth:  3,
-                shadowBlur: 28,
-                zIndex:     100,
-              },
-              selected: {
-                label:       true,
-                lineWidth:   3,
-                shadowBlur:  32,
-                stroke:      "#fbbf24",
-                shadowColor: "#fbbf24",
-                zIndex:      100,
-              },
+              active:   { label: true, lineWidth: 3,   shadowBlur: 28, zIndex: 100 },
+              selected: { label: true, lineWidth: 3,   shadowBlur: 32, stroke: "#fbbf24", shadowColor: "#fbbf24", zIndex: 100 },
               inactive: { opacity: 0.18, shadowBlur: 0 },
             },
           },
@@ -595,21 +381,21 @@ export function DepsGraphClient() {
           } catch {}
         });
 
-        // ── Click → detail sidebar ────────────────────────────────────────────
+        // ── Click → sidebar ───────────────────────────────────────────────────
         graph.on("node:click", (evt: unknown) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const e      = evt as any;
           const nodeId = e?.target?.id ?? e?.itemId;
           if (!nodeId) return;
-          const node = ALL_NODES.find((n) => n.id === nodeId);
+          const node = REPO_NODES.find((n) => n.id === nodeId);
           if (!node) return;
           setSelNode({
-            id:         nodeId,
-            label:      node.label,
-            layer:      node.layer,
-            repo:       node.repo,
-            importsTo:  ALL_EDGES.filter((ed) => ed.s === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
-            importedBy: ALL_EDGES.filter((ed) => ed.t === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
+            id:        nodeId,
+            label:     node.label,
+            cat:       node.cat,
+            desc:      node.desc,
+            dependsOn: REPO_EDGES.filter((ed) => ed.s === nodeId).map((ed) => REPO_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
+            usedBy:    REPO_EDGES.filter((ed) => ed.t === nodeId).map((ed) => REPO_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
           });
         });
 
@@ -638,10 +424,6 @@ export function DepsGraphClient() {
     };
   }, []);
 
-  const LEGEND = Object.entries(LAYERS)
-    .filter(([k]) => k !== "entry") // entry já fica óbvio pelo centro
-    .map(([, v]) => v);
-
   return (
     <div
       style={{
@@ -655,12 +437,10 @@ export function DepsGraphClient() {
         boxShadow:    "0 0 40px rgba(6,182,212,0.04), inset 0 0 80px rgba(6,182,212,0.02)",
       }}
     >
-      {/* Grid de fundo */}
+      {/* Grid */}
       <div aria-hidden style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(rgba(6,182,212,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.04) 1px, transparent 1px)`, backgroundSize: "48px 48px", pointerEvents: "none", zIndex: 0 }} />
-
       {/* Scanlines */}
       <div aria-hidden style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)", pointerEvents: "none", zIndex: 1 }} />
-
       {/* Glow central */}
       <div aria-hidden style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "60%", height: "60%", background: "radial-gradient(ellipse, rgba(6,182,212,0.04) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
@@ -676,7 +456,7 @@ export function DepsGraphClient() {
 
       {/* Toolbar */}
       {ready && (
-        <div style={{ position: "absolute", top: 12, right: selNode ? 292 : 12, display: "flex", flexDirection: "column", gap: 6, zIndex: 20, transition: "right 200ms ease" }}>
+        <div style={{ position: "absolute", top: 12, right: selNode ? 312 : 12, display: "flex", flexDirection: "column", gap: 6, zIndex: 20, transition: "right 200ms ease" }}>
           {([
             { icon: "+", action: zoomIn,  title: "Zoom In"  },
             { icon: "−", action: zoomOut, title: "Zoom Out" },
@@ -696,14 +476,14 @@ export function DepsGraphClient() {
         </div>
       )}
 
-      {/* Legenda interna */}
+      {/* Legenda */}
       {ready && (
         <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", flexDirection: "column", gap: 5, zIndex: 20, background: "rgba(2,8,18,0.88)", border: "1px solid rgba(6,182,212,0.1)", borderRadius: 8, padding: "8px 12px", backdropFilter: "blur(12px)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
             <Layers size={10} color="rgba(6,182,212,0.5)" />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "rgba(6,182,212,0.5)", letterSpacing: "0.14em", textTransform: "uppercase" }}>// layers</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "rgba(6,182,212,0.5)", letterSpacing: "0.14em", textTransform: "uppercase" }}>// categorias</span>
           </div>
-          {LEGEND.map(({ label, color }) => (
+          {Object.entries(CATS).map(([, { label, color }]) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, boxShadow: `0 0 5px ${color}`, flexShrink: 0 }} />
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>{label}</span>
@@ -712,11 +492,25 @@ export function DepsGraphClient() {
         </div>
       )}
 
+      {/* Contador */}
+      {ready && (
+        <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: "0.5rem", zIndex: 20 }}>
+          {[
+            { label: `${REPO_NODES.length} repos`,    color: "#06b6d4" },
+            { label: `${REPO_EDGES.length} conexões`, color: "#22c55e" },
+          ].map(({ label, color }) => (
+            <span key={label} style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color, background: `${color}11`, border: `1px solid ${color}33`, borderRadius: "var(--r)", padding: "0.2rem 0.65rem", letterSpacing: "0.06em" }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* G6 canvas */}
       <div ref={containerRef} style={{ position: "absolute", inset: 0, zIndex: 2 }} />
 
       {/* Sidebar */}
-      {selNode && <NodeSidebar node={selNode} onClose={() => setSelNode(null)} />}
+      {selNode && <RepoSidebar node={selNode} onClose={() => setSelNode(null)} />}
     </div>
   );
 }
