@@ -19,6 +19,13 @@ const LAYERS: Record<string, { color: string; label: string }> = {
   orphan:     { color: "#334155", label: "orphan"     },
 };
 
+// ─── Repos ────────────────────────────────────────────────────────────────────
+// Cada repo tem um fill-tint próprio para diferenciação visual
+const REPOS: Record<string, { label: string; tint: string; icon: string }> = {
+  crm: { label: "cotacao-inteligente-crm", tint: "0d", icon: "⬡" },
+  pp:  { label: "pixel-perfect",           tint: "1a", icon: "◈" },
+};
+
 // ─── Nodes ────────────────────────────────────────────────────────────────────
 const SIM_NODES = [
   { id: "main",         label: "main.tsx",                        layer: "entry"      },
@@ -183,11 +190,95 @@ const SIM_EDGES = [
   { s: "sul_login",    t: "be_cdp"       },
 ];
 
+// ─── pixel-perfect repo ───────────────────────────────────────────────────────
+const PP_NODES = [
+  { id: "pp_main",         label: "main.tsx",                   layer: "entry"      },
+  { id: "pp_App",          label: "App.tsx",                    layer: "entry"      },
+  { id: "pp_CompareView",  label: "pages/CompareView.tsx",      layer: "pages"      },
+  { id: "pp_Components",   label: "pages/ComponentsLibrary.tsx",layer: "pages"      },
+  { id: "pp_Settings",     label: "pages/Settings.tsx",         layer: "pages"      },
+  { id: "pp_Canvas",       label: "CompareCanvas.tsx",          layer: "components" },
+  { id: "pp_DiffOverlay",  label: "DiffOverlay.tsx",            layer: "components" },
+  { id: "pp_Preview",      label: "ComponentPreview.tsx",       layer: "components" },
+  { id: "pp_TokenPanel",   label: "TokenPanel.tsx",             layer: "components" },
+  { id: "pp_ColorSwatch",  label: "ColorSwatch.tsx",            layer: "components" },
+  { id: "pp_LayerTree",    label: "LayerTree.tsx",              layer: "components" },
+  { id: "pp_Annotations",  label: "AnnotationList.tsx",         layer: "components" },
+  { id: "pp_ExportDialog", label: "ExportDialog.tsx",           layer: "components" },
+  { id: "pp_usePixelDiff", label: "hooks/usePixelDiff.ts",      layer: "hooks"      },
+  { id: "pp_useZoom",      label: "hooks/useZoom.ts",           layer: "hooks"      },
+  { id: "pp_useAnnotation",label: "hooks/useAnnotation.ts",     layer: "hooks"      },
+  { id: "pp_diffEngine",   label: "lib/diffEngine.ts",          layer: "lib"        },
+  { id: "pp_imageLoader",  label: "lib/imageLoader.ts",         layer: "lib"        },
+  { id: "pp_exportPDF",    label: "lib/exportPDF.ts",           layer: "lib"        },
+  { id: "pp_tokenParser",  label: "lib/tokenParser.ts",         layer: "lib"        },
+  { id: "pp_colorMath",    label: "utils/colorMath.ts",         layer: "utils"      },
+  { id: "pp_measureUtils", label: "utils/measureUtils.ts",      layer: "utils"      },
+  { id: "pp_fileUtils",    label: "utils/fileUtils.ts",         layer: "utils"      },
+  { id: "pp_btn",          label: "ui/button.tsx",              layer: "ui"         },
+  { id: "pp_dialog",       label: "ui/dialog.tsx",              layer: "ui"         },
+  { id: "pp_tooltip",      label: "ui/tooltip.tsx",             layer: "ui"         },
+  { id: "pp_vite",         label: "vite.config.ts",             layer: "orphan"     },
+  { id: "pp_eslint",       label: "eslint.config.js",           layer: "orphan"     },
+];
+
+const PP_EDGES = [
+  { s: "pp_main",         t: "pp_App"          },
+  { s: "pp_App",          t: "pp_CompareView"  },
+  { s: "pp_App",          t: "pp_Components"   },
+  { s: "pp_App",          t: "pp_Settings"     },
+  { s: "pp_CompareView",  t: "pp_Canvas"       },
+  { s: "pp_CompareView",  t: "pp_DiffOverlay"  },
+  { s: "pp_CompareView",  t: "pp_LayerTree"    },
+  { s: "pp_CompareView",  t: "pp_Annotations"  },
+  { s: "pp_Components",   t: "pp_Preview"      },
+  { s: "pp_Components",   t: "pp_TokenPanel"   },
+  { s: "pp_Components",   t: "pp_ColorSwatch"  },
+  { s: "pp_Settings",     t: "pp_tokenParser"  },
+  { s: "pp_Settings",     t: "pp_exportPDF"    },
+  { s: "pp_Canvas",       t: "pp_usePixelDiff" },
+  { s: "pp_Canvas",       t: "pp_useZoom"      },
+  { s: "pp_Canvas",       t: "pp_imageLoader"  },
+  { s: "pp_DiffOverlay",  t: "pp_usePixelDiff" },
+  { s: "pp_DiffOverlay",  t: "pp_colorMath"    },
+  { s: "pp_TokenPanel",   t: "pp_tokenParser"  },
+  { s: "pp_TokenPanel",   t: "pp_ColorSwatch"  },
+  { s: "pp_LayerTree",    t: "pp_useAnnotation"},
+  { s: "pp_Annotations",  t: "pp_useAnnotation"},
+  { s: "pp_Annotations",  t: "pp_exportPDF"    },
+  { s: "pp_ExportDialog", t: "pp_exportPDF"    },
+  { s: "pp_ExportDialog", t: "pp_fileUtils"    },
+  { s: "pp_ExportDialog", t: "pp_dialog"       },
+  { s: "pp_usePixelDiff", t: "pp_diffEngine"   },
+  { s: "pp_usePixelDiff", t: "pp_colorMath"    },
+  { s: "pp_useZoom",      t: "pp_measureUtils" },
+  { s: "pp_useAnnotation",t: "pp_fileUtils"    },
+  { s: "pp_diffEngine",   t: "pp_colorMath"    },
+  { s: "pp_diffEngine",   t: "pp_measureUtils" },
+  { s: "pp_imageLoader",  t: "pp_fileUtils"    },
+  { s: "pp_tokenParser",  t: "pp_colorMath"    },
+  { s: "pp_Preview",      t: "pp_tokenParser"  },
+  { s: "pp_Preview",      t: "pp_btn"          },
+  { s: "pp_ColorSwatch",  t: "pp_colorMath"    },
+  { s: "pp_ColorSwatch",  t: "pp_tooltip"      },
+];
+
+// ─── All nodes / edges merged ─────────────────────────────────────────────────
+const ALL_NODES = [
+  ...SIM_NODES.map((n) => ({ ...n, repo: "crm" })),
+  ...PP_NODES.map((n)  => ({ ...n, repo: "pp"  })),
+];
+const ALL_EDGES = [
+  ...SIM_EDGES.map((e) => ({ ...e, repo: "crm" })),
+  ...PP_EDGES.map((e)  => ({ ...e, repo: "pp"  })),
+];
+
 // ─── Selection detail ─────────────────────────────────────────────────────────
 interface SelNode {
   id:         string;
   label:      string;
   layer:      string;
+  repo:       string;
   importsTo:  string[];
   importedBy: string[];
 }
@@ -221,9 +312,12 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
           <FileCode size={16} color={accent} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
-            {LAYERS[node.layer]?.label}
-          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "var(--muted-foreground)", letterSpacing: "0.06em", marginBottom: "0.1rem" }}>
+              {REPOS[node.repo]?.label ?? node.repo}
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+              {LAYERS[node.layer]?.label}
+            </div>
           <div style={{ fontFamily: "var(--mono)", fontSize: "0.9rem", fontWeight: 700, color: "var(--text)", wordBreak: "break-all", lineHeight: 1.3, textShadow: `0 0 10px ${accent}44` }}>
             {node.label.split("/").pop()}
           </div>
@@ -263,7 +357,7 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               {node.importsTo.map((f) => {
-                const tgt = SIM_NODES.find((n) => n.label === f);
+                const tgt = ALL_NODES.find((n) => n.label === f);
                 const c   = LAYERS[tgt?.layer ?? "orphan"]?.color ?? "#5a7a9a";
                 return (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
@@ -287,7 +381,7 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               {node.importedBy.map((f) => {
-                const src = SIM_NODES.find((n) => n.label === f);
+                const src = ALL_NODES.find((n) => n.label === f);
                 const c   = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
                 return (
                   <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
@@ -349,27 +443,30 @@ export function DepsGraphClient() {
 
         // ── Degree map ────────────────────────────────────────────────────────
         const deg: Record<string, number> = {};
-        SIM_NODES.forEach((n) => { deg[n.id] = 0; });
-        SIM_EDGES.forEach((e) => {
+        ALL_NODES.forEach((n) => { deg[n.id] = 0; });
+        ALL_EDGES.forEach((e) => {
           deg[e.s] = (deg[e.s] ?? 0) + 1;
           deg[e.t] = (deg[e.t] ?? 0) + 1;
         });
         const maxDeg = Math.max(...Object.values(deg), 1);
 
         // ── Build G6 node/edge data ───────────────────────────────────────────
-        const gNodes = SIM_NODES.map((n) => {
-          const color   = LAYERS[n.layer]?.color ?? "#5a7a9a";
-          const d       = deg[n.id] ?? 0;
-          const size    = 20 + (d / maxDeg) * 24;
-          const name    = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? n.label;
-          const isHub   = d >= 5 || n.layer === "entry";
-          const icon    = isHub ? name.slice(0, 2).toUpperCase() : name.slice(0, 2);
+        const gNodes = ALL_NODES.map((n) => {
+          const color    = LAYERS[n.layer]?.color ?? "#5a7a9a";
+          const repo     = REPOS[n.repo];
+          const d        = deg[n.id] ?? 0;
+          const size     = 20 + (d / maxDeg) * 24;
+          const name     = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? n.label;
+          const isHub    = d >= 5 || n.layer === "entry";
+          const tint     = repo.tint;
+          // repoLayer groups nodes by repo first, then by layer within the radial rings
+          const repoLayer = `${n.repo}-${n.layer}`;
 
           return {
             id:    n.id,
             style: {
               size,
-              fill:             isHub ? `${color}0d` : `${color}0a`,
+              fill:             isHub ? `${color}${tint}` : `${color}0a`,
               stroke:           color,
               lineWidth:        isHub ? 2.5 : 1.5,
               shadowColor:      color,
@@ -386,21 +483,24 @@ export function DepsGraphClient() {
               labelBackgroundFill:    "rgba(2,6,23,0.85)",
               labelBackgroundRadius:  3,
               labelBackgroundPadding: [2, 7, 2, 7] as [number,number,number,number],
-              iconText:        icon,
+              iconText:        repo.icon,
               iconFill:        color,
               iconFontSize:    isHub ? 11 : 9,
               iconFontFamily:  "'Fira Code', monospace",
             },
             data: {
-              layer:     n.layer,
-              fullLabel: n.label,
-              degree:    d,
+              layer:      n.layer,
+              repo:       n.repo,
+              repoLabel:  repo.label,
+              fullLabel:  n.label,
+              degree:     d,
+              repoLayer,
             },
           };
         });
 
-        const gEdges = SIM_EDGES.map((e, i) => {
-          const src   = SIM_NODES.find((n) => n.id === e.s);
+        const gEdges = ALL_EDGES.map((e, i) => {
+          const src   = ALL_NODES.find((n) => n.id === e.s);
           const color = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
           return {
             id:     `edge-${i}`,
@@ -430,12 +530,12 @@ export function DepsGraphClient() {
           layout: {
             type:                       "radial",
             nodeSize:                   44,
-            unitRadius:                 130,
-            linkDistance:               240,
+            unitRadius:                 140,
+            linkDistance:               260,
             preventOverlap:             true,
             maxPreventOverlapIteration: 200,
-            sortBy:                     "layer",
-            sortStrength:               60,
+            sortBy:                     "repoLayer",  // groups by repo+layer on each ring
+            sortStrength:               70,
           },
 
           node: {
@@ -501,14 +601,15 @@ export function DepsGraphClient() {
           const e      = evt as any;
           const nodeId = e?.target?.id ?? e?.itemId;
           if (!nodeId) return;
-          const node = SIM_NODES.find((n) => n.id === nodeId);
+          const node = ALL_NODES.find((n) => n.id === nodeId);
           if (!node) return;
           setSelNode({
             id:         nodeId,
             label:      node.label,
             layer:      node.layer,
-            importsTo:  SIM_EDGES.filter((ed) => ed.s === nodeId).map((ed) => SIM_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
-            importedBy: SIM_EDGES.filter((ed) => ed.t === nodeId).map((ed) => SIM_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
+            repo:       node.repo,
+            importsTo:  ALL_EDGES.filter((ed) => ed.s === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
+            importedBy: ALL_EDGES.filter((ed) => ed.t === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
           });
         });
 

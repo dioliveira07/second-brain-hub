@@ -20,7 +20,10 @@ export default function DepsGraphPage() {
               File Dependency Graph
             </h2>
             <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)", margin: "0.3rem 0 0" }}>
-              Visualização de imports entre arquivos — <span style={{ color: "var(--cyan)" }}>cotacao-inteligente-crm</span>
+              Visualização de imports entre arquivos —{" "}
+              <span style={{ color: "var(--cyan)" }}>cotacao-inteligente-crm</span>
+              {" · "}
+              <span style={{ color: "#a78bfa" }}>pixel-perfect</span>
             </p>
           </div>
 
