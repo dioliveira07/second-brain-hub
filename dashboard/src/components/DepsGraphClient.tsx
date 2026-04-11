@@ -5,11 +5,12 @@ import { X, GitBranch, ArrowRight, Layers } from "lucide-react";
 
 // ─── Categories (layer equivalent for repo-level graph) ───────────────────────
 const CATS: Record<string, { color: string; label: string }> = {
-  fullstack: { color: "#a78bfa", label: "Full-stack"  },
-  backend:   { color: "#f87171", label: "Backend"     },
-  frontend:  { color: "#06b6d4", label: "Frontend"    },
-  tooling:   { color: "#fbbf24", label: "Tooling"     },
-  infra:     { color: "#fb923c", label: "Infra / Ops" },
+  fullstack: { color: "#a78bfa", label: "Full-stack"   },
+  backend:   { color: "#f87171", label: "Backend"      },
+  frontend:  { color: "#06b6d4", label: "Frontend"     },
+  tooling:   { color: "#fbbf24", label: "Tooling"      },
+  infra:     { color: "#fb923c", label: "Infra / Ops"  },
+  service:   { color: "#34d399", label: "Serviço / API" },
 };
 
 // ─── All 29 repos ─────────────────────────────────────────────────────────────
@@ -89,14 +90,93 @@ const REPO_EDGES = [
   { s: "valorize",           t: "sistemainterno",     desc: "testa contra sistema interno"        },
 ];
 
+// ─── Shared services / external APIs ─────────────────────────────────────────
+// Nós de infra/serviço que múltiplos repos consomem — criam o hub-and-spoke
+const SERVICE_NODES = [
+  { id: "svc-postgres", label: "PostgreSQL",      cat: "service", desc: "Banco relacional principal — usado por backend, CRM e infra"   },
+  { id: "svc-redis",    label: "Redis",            cat: "service", desc: "Cache e filas — sessões, jobs e pub/sub"                       },
+  { id: "svc-qdrant",   label: "Qdrant",           cat: "service", desc: "Vector database para busca semântica e embeddings"             },
+  { id: "svc-supabase", label: "Supabase",         cat: "service", desc: "BaaS com Postgres, auth e realtime"                           },
+  { id: "svc-github",   label: "GitHub API",       cat: "service", desc: "API do GitHub — webhooks, repos, issues e PRs"                },
+  { id: "svc-claude",   label: "Anthropic Claude", cat: "service", desc: "LLM da Anthropic — geração, análise e agentes"                },
+  { id: "svc-doutor",   label: "DoutorSeguros API",cat: "service", desc: "API da operadora de seguros para cotações"                    },
+  { id: "svc-nfse",     label: "NFSe API",         cat: "service", desc: "API para emissão de Notas Fiscais de Serviço Eletrônicas"     },
+  { id: "svc-cnpj",     label: "CNPJ.ws",          cat: "service", desc: "API de consulta de dados empresariais por CNPJ"               },
+  { id: "svc-vercel",   label: "Vercel",            cat: "service", desc: "Plataforma de deploy para apps Next.js e frontends estáticos" },
+  { id: "svc-stripe",   label: "Stripe",            cat: "service", desc: "Gateway de pagamentos — assinaturas e cobranças"              },
+  { id: "svc-docker",   label: "Docker / Compose",  cat: "service", desc: "Containerização e orquestração local de serviços"            },
+];
+
+// Edges: repo → service (repo "usa" o serviço)
+const SERVICE_EDGES = [
+  // PostgreSQL
+  { s: "second-brain-hub",   t: "svc-postgres", desc: "armazena repos, decisões e embeddings"    },
+  { s: "fluxionai",          t: "svc-postgres", desc: "persistência de agentes e histórico"       },
+  { s: "fluxiom-crm",        t: "svc-postgres", desc: "CRM e pipeline de vendas"                 },
+  { s: "garimpo",            t: "svc-postgres", desc: "índice de dados garimpados"                },
+  { s: "cotacao-crm",        t: "svc-postgres", desc: "cotações e leads"                          },
+  { s: "innove-ledger",      t: "svc-postgres", desc: "transações financeiras"                    },
+  { s: "faturamento",        t: "svc-postgres", desc: "faturamento e notas"                       },
+  { s: "associacoes",        t: "svc-postgres", desc: "cadastro de associados"                    },
+  { s: "sistemainterno",     t: "svc-postgres", desc: "dados internos da empresa"                 },
+  { s: "autoconect-oficial", t: "svc-postgres", desc: "dados de conexão automática"               },
+  // Redis
+  { s: "second-brain-hub",   t: "svc-redis",    desc: "cache de queries e sessões"               },
+  { s: "fluxionai",          t: "svc-redis",    desc: "filas de jobs e cache de contexto"        },
+  { s: "garimpo",            t: "svc-redis",    desc: "cache de resultados de busca"             },
+  { s: "n8n",                t: "svc-redis",    desc: "estado de workflows e filas"              },
+  // Qdrant
+  { s: "second-brain-hub",   t: "svc-qdrant",   desc: "busca semântica em código indexado"       },
+  { s: "fluxionai",          t: "svc-qdrant",   desc: "memória vetorial dos agentes"             },
+  { s: "garimpo",            t: "svc-qdrant",   desc: "similaridade semântica de dados"          },
+  // Supabase
+  { s: "cotacao-crm",        t: "svc-supabase", desc: "auth e realtime de cotações"              },
+  { s: "valorize",           t: "svc-supabase", desc: "backend-as-a-service"                     },
+  { s: "mind-growth",        t: "svc-supabase", desc: "persistência e auth"                      },
+  // GitHub API
+  { s: "github-connector",   t: "svc-github",   desc: "webhook e leitura de repos"               },
+  { s: "second-brain-hub",   t: "svc-github",   desc: "indexação de PRs e commits"               },
+  { s: "criacao-projetos",   t: "svc-github",   desc: "criação de repos via API"                 },
+  { s: "bugs",               t: "svc-github",   desc: "sincronização de issues"                  },
+  // Anthropic Claude
+  { s: "fluxionai",          t: "svc-claude",   desc: "motor de IA dos agentes"                  },
+  { s: "second-brain-hub",   t: "svc-claude",   desc: "análise e resumo de código"               },
+  { s: "cotacao-crm",        t: "svc-claude",   desc: "recomendação inteligente de planos"       },
+  // Externos específicos
+  { s: "webhook-doutor",     t: "svc-doutor",   desc: "recebe eventos do DoutorSeguros"          },
+  { s: "cotacao-crm",        t: "svc-doutor",   desc: "cotações direto na operadora"             },
+  { s: "nfse-proxy",         t: "svc-nfse",     desc: "emissão de notas fiscais"                 },
+  { s: "cotacao-crm",        t: "svc-cnpj",     desc: "consulta dados da empresa do cliente"     },
+  { s: "fluxiom-crm",        t: "svc-cnpj",     desc: "validação de CNPJ no cadastro"            },
+  // Vercel
+  { s: "cotacao-crm",        t: "svc-vercel",   desc: "deploy do frontend React"                 },
+  { s: "pixel-perfect",      t: "svc-vercel",   desc: "deploy do clone pixel-perfect"            },
+  { s: "valorize",           t: "svc-vercel",   desc: "deploy"                                   },
+  { s: "mind-growth",        t: "svc-vercel",   desc: "deploy"                                   },
+  { s: "designertools",      t: "svc-vercel",   desc: "deploy de ferramentas"                    },
+  // Stripe
+  { s: "innove-ledger",      t: "svc-stripe",   desc: "cobranças e assinaturas"                  },
+  { s: "faturamento",        t: "svc-stripe",   desc: "pagamentos de associados"                 },
+  { s: "fluxiom-crm",        t: "svc-stripe",   desc: "billing do CRM"                           },
+  // Docker
+  { s: "second-brain-hub",   t: "svc-docker",   desc: "compose: api + dashboard + dbs"           },
+  { s: "fluxionai",          t: "svc-docker",   desc: "containers de agentes"                    },
+  { s: "garimpo",            t: "svc-docker",   desc: "ambiente isolado de indexação"            },
+  { s: "n8n",                t: "svc-docker",   desc: "n8n self-hosted em container"             },
+];
+
+// ─── Merged datasets ──────────────────────────────────────────────────────────
+const ALL_NODES = [...REPO_NODES, ...SERVICE_NODES];
+const ALL_EDGES = [...REPO_EDGES, ...SERVICE_EDGES];
+
 // ─── Selection detail ─────────────────────────────────────────────────────────
 interface SelRepo {
-  id:          string;
-  label:       string;
-  cat:         string;
-  desc:        string;
-  dependsOn:   string[];  // repos que este consome
-  usedBy:      string[];  // repos que consomem este
+  id:        string;
+  label:     string;
+  cat:       string;
+  desc:      string;
+  dependsOn: string[];
+  usedBy:    string[];
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -162,7 +242,7 @@ function RepoSidebar({ node, onClose }: { node: SelRepo; onClose: () => void }) 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               {node.dependsOn.map((dep) => {
-                const edge = REPO_EDGES.find(e => e.s === node.id && REPO_NODES.find(n => n.id === e.t)?.label === dep);
+                const edge = ALL_EDGES.find(e => e.s === node.id && ALL_NODES.find(n => n.id === e.t)?.label === dep);
                 const tgt  = REPO_NODES.find(n => n.label === dep);
                 const c    = CATS[tgt?.cat ?? "tooling"]?.color ?? "#5a7a9a";
                 return (
@@ -192,7 +272,7 @@ function RepoSidebar({ node, onClose }: { node: SelRepo; onClose: () => void }) 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               {node.usedBy.map((dep) => {
-                const src = REPO_NODES.find(n => n.label === dep);
+                const src = ALL_NODES.find(n => n.label === dep);
                 const c   = CATS[src?.cat ?? "tooling"]?.color ?? "#5a7a9a";
                 return (
                   <div key={dep} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", background: "var(--bg-panel)", borderRadius: 4 }}>
@@ -251,33 +331,35 @@ export function DepsGraphClient() {
 
         // ── Degree map ────────────────────────────────────────────────────────
         const deg: Record<string, number> = {};
-        REPO_NODES.forEach((n) => { deg[n.id] = 0; });
-        REPO_EDGES.forEach((e) => {
+        ALL_NODES.forEach((n) => { deg[n.id] = 0; });
+        ALL_EDGES.forEach((e) => {
           deg[e.s] = (deg[e.s] ?? 0) + 1;
           deg[e.t] = (deg[e.t] ?? 0) + 1;
         });
         const maxDeg = Math.max(...Object.values(deg), 1);
 
         // ── G6 nodes ──────────────────────────────────────────────────────────
-        const gNodes = REPO_NODES.map((n) => {
+        const gNodes = ALL_NODES.map((n) => {
           const color = CATS[n.cat]?.color ?? "#5a7a9a";
           const d     = deg[n.id] ?? 0;
           const size  = 24 + (d / maxDeg) * 26;
           const isHub = d >= 4;
-          const name  = n.label.length > 18 ? n.label.slice(0, 17) + "…" : n.label;
+          const isSvc = n.cat === "service";
+          const name  = n.label.length > 20 ? n.label.slice(0, 19) + "…" : n.label;
+          const icon  = isSvc ? "◆" : "⬡";
 
           return {
             id:    n.id,
             style: {
               size,
-              fill:             isHub ? `${color}0d` : `${color}0a`,
+              fill:             isSvc ? `${color}18` : isHub ? `${color}0d` : `${color}0a`,
               stroke:           color,
-              lineWidth:        isHub ? 2.5 : 1.5,
+              lineWidth:        isSvc ? 2 : isHub ? 2.5 : 1.5,
               shadowColor:      color,
-              shadowBlur:       isHub ? 20 : 10,
-              label:            isHub || d >= 2,
+              shadowBlur:       isSvc ? 16 : isHub ? 20 : 10,
+              label:            isHub || isSvc || d >= 2,
               labelText:        name,
-              labelFill:        isHub ? color : "#94a3b8",
+              labelFill:        isHub || isSvc ? color : "#94a3b8",
               labelFontFamily:  "'Fira Code', monospace",
               labelFontSize:    isHub ? 11 : 9,
               labelMaxWidth:    160,
@@ -287,7 +369,7 @@ export function DepsGraphClient() {
               labelBackgroundFill:    "rgba(2,6,23,0.85)",
               labelBackgroundRadius:  3,
               labelBackgroundPadding: [2, 7, 2, 7] as [number,number,number,number],
-              iconText:         "⬡",
+              iconText:         icon,
               iconFill:         color,
               iconFontSize:     isHub ? 13 : 10,
               iconFontFamily:   "'Fira Code', monospace",
@@ -297,8 +379,8 @@ export function DepsGraphClient() {
         });
 
         // ── G6 edges ──────────────────────────────────────────────────────────
-        const gEdges = REPO_EDGES.map((e, i) => {
-          const src   = REPO_NODES.find((n) => n.id === e.s);
+        const gEdges = ALL_EDGES.map((e, i) => {
+          const src   = ALL_NODES.find((n) => n.id === e.s);
           const color = CATS[src?.cat ?? "tooling"]?.color ?? "#5a7a9a";
           return {
             id:     `edge-${i}`,
@@ -387,15 +469,15 @@ export function DepsGraphClient() {
           const e      = evt as any;
           const nodeId = e?.target?.id ?? e?.itemId;
           if (!nodeId) return;
-          const node = REPO_NODES.find((n) => n.id === nodeId);
+          const node = ALL_NODES.find((n) => n.id === nodeId);
           if (!node) return;
           setSelNode({
             id:        nodeId,
             label:     node.label,
             cat:       node.cat,
             desc:      node.desc,
-            dependsOn: REPO_EDGES.filter((ed) => ed.s === nodeId).map((ed) => REPO_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
-            usedBy:    REPO_EDGES.filter((ed) => ed.t === nodeId).map((ed) => REPO_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
+            dependsOn: ALL_EDGES.filter((ed) => ed.s === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
+            usedBy:    ALL_EDGES.filter((ed) => ed.t === nodeId).map((ed) => ALL_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
           });
         });
 
@@ -496,8 +578,9 @@ export function DepsGraphClient() {
       {ready && (
         <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: "0.5rem", zIndex: 20 }}>
           {[
-            { label: `${REPO_NODES.length} repos`,    color: "#06b6d4" },
-            { label: `${REPO_EDGES.length} conexões`, color: "#22c55e" },
+            { label: `${REPO_NODES.length} repos`,      color: "#06b6d4" },
+            { label: `${SERVICE_NODES.length} serviços`, color: "#34d399" },
+            { label: `${ALL_EDGES.length} conexões`,     color: "#22c55e" },
           ].map(({ label, color }) => (
             <span key={label} style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color, background: `${color}11`, border: `1px solid ${color}33`, borderRadius: "var(--r)", padding: "0.2rem 0.65rem", letterSpacing: "0.06em" }}>
               {label}
