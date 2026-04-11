@@ -70,9 +70,8 @@ export function ExploreClient({
 
     // Buscar conteúdo
     try {
-      const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
       const res = await fetch(
-        `${base}/api/hub/file?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`
+        `/painel/api/hub/file?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro desconhecido");
