@@ -335,16 +335,31 @@ export function DepsGraphClient() {
     SIM_EDGES.forEach((e) => { deg[e.s] = (deg[e.s] ?? 0) + 1; deg[e.t] = (deg[e.t] ?? 0) + 1; });
     const maxDeg = Math.max(...Object.values(deg), 1);
 
-    // ── Init nodes in circle ──────────────────────────────────────────────────
-    const nodes: PNode[] = SIM_NODES.map((n, i) => {
-      const angle  = (2 * Math.PI * i) / SIM_NODES.length;
-      const spread = 280 + Math.random() * 40;
-      const d      = deg[n.id] ?? 0;
-      const r      = 7 + (d / maxDeg) * 18;
+    // ── Init nodes in layer-grouped radial sectors (like G6 radial sortBy:comboId) ─
+    const LAYER_ORDER = ["entry","pages","components","wizard","hooks","lib","utils","ui","backend","operator","core","orphan"];
+    const byLayer: Record<string, typeof SIM_NODES[0][]> = {};
+    for (const n of SIM_NODES) {
+      if (!byLayer[n.layer]) byLayer[n.layer] = [];
+      byLayer[n.layer].push(n);
+    }
+    const activeLayers = LAYER_ORDER.filter((l) => byLayer[l]?.length > 0);
+    const sectorAngle  = (2 * Math.PI) / activeLayers.length;
+
+    const nodes: PNode[] = SIM_NODES.map((n) => {
+      const d          = deg[n.id] ?? 0;
+      const r          = 7 + (d / maxDeg) * 18;
+      const layerIdx   = activeLayers.indexOf(n.layer);
+      const siblings   = byLayer[n.layer];
+      const sibIdx     = siblings.indexOf(n);
+      const baseAngle  = layerIdx * sectorAngle;
+      const spread     = sectorAngle * 0.65;
+      const angleOff   = siblings.length > 1 ? (sibIdx / (siblings.length - 1) - 0.5) * spread : 0;
+      const angle      = baseAngle + angleOff;
+      const radius     = n.layer === "orphan" ? 390 : n.layer === "entry" ? 120 : 200 + (1 - d / maxDeg) * 110;
       return {
         id: n.id, label: n.label, layer: n.layer,
-        x: cx + Math.cos(angle) * spread,
-        y: cy + Math.sin(angle) * spread,
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius,
         vx: 0, vy: 0, r, pinned: false, degree: d,
       };
     });
@@ -454,6 +469,9 @@ export function DepsGraphClient() {
 
       ctx.restore();
     }
+
+    // ── Pre-run simulation silently so first render is already stable ─────────
+    for (let i = 0; i < 260; i++) physics();
 
     // ── Loop ──────────────────────────────────────────────────────────────────
     function loop() {
