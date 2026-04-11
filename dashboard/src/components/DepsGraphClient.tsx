@@ -401,14 +401,14 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
           data: { nodes: gNodes, edges: gEdges as never[] },
 
           layout: {
-            type:           "force",
-            linkDistance:   180,
-            nodeStrength:   -600,
-            edgeStrength:   0.6,
-            preventOverlap: true,
-            nodeSize:       60,
-            alphaDecay:     0.025,
-            velocityDecay:  0.4,
+            type:                       "radial",
+            nodeSize:                   50,
+            unitRadius:                 155,
+            linkDistance:               300,
+            preventOverlap:             true,
+            maxPreventOverlapIteration: 200,
+            sortBy:                     "cat",
+            sortStrength:               45,
           },
 
           node: {
