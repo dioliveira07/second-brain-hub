@@ -31,10 +31,7 @@ async def index_repo(github_full_name: str, db: AsyncSession, changed_files: lis
         github_client.clone_repo, github_full_name, REPOS_DIR, settings.github_pat
     )
 
-    # 2. Analisa (CPU-bound — também em thread)
-    analysis = await asyncio.to_thread(repo_analyzer.analyze_repo, repo_path)
-
-    # 3. Pega/cria IndexedRepo no banco
+    # 2. Pega/cria IndexedRepo no banco (antes da análise para decidir o que gerar)
     result = await db.execute(
         select(IndexedRepo).where(IndexedRepo.github_full_name == github_full_name)
     )
@@ -42,6 +39,17 @@ async def index_repo(github_full_name: str, db: AsyncSession, changed_files: lis
     if not indexed_repo:
         indexed_repo = IndexedRepo(github_full_name=github_full_name)
         db.add(indexed_repo)
+
+    # Incremental: reusar summary existente — Claude só é chamado na indexação completa
+    # Isso evita consumo de tokens a cada push
+    is_incremental = bool(changed_files)
+    existing_summary = indexed_repo.summary if is_incremental else None
+
+    # 3. Analisa (CPU-bound — em thread)
+    # Na incremental, pula generate_summary (passa existing_summary para reusar)
+    analysis = await asyncio.to_thread(
+        repo_analyzer.analyze_repo, repo_path, existing_summary=existing_summary
+    )
 
     indexed_repo.indexing_status = "indexing"
     indexed_repo.detected_stack = analysis["stack"]

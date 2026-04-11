@@ -482,12 +482,17 @@ def generate_summary(repo_path: str, stack: dict, key_files: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def analyze_repo(repo_path: str) -> dict:
-    """Orquestrador: chama todas as funções acima em sequência."""
+def analyze_repo(repo_path: str, existing_summary: str | None = None) -> dict:
+    """Orquestrador: chama todas as funções acima em sequência.
+
+    Se existing_summary for passado (indexação incremental), pula generate_summary
+    para evitar consumo desnecessário de tokens — o summary só é regenerado em
+    indexações completas (primeiro push ou indexação manual).
+    """
     stack = detect_stack(repo_path)
     directory_map = map_directory(repo_path)
     key_files = identify_key_files(repo_path, stack)
-    summary = generate_summary(repo_path, stack, key_files)
+    summary = existing_summary if existing_summary else generate_summary(repo_path, stack, key_files)
     return {
         "stack": stack,
         "directory_map": directory_map,
