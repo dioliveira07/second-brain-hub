@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { X, GitBranch, ArrowRight, Layers, Clock, Box } from "lucide-react";
 
 // ─── API types (shared with GraphClient) ─────────────────────────────────────
@@ -279,8 +279,8 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
   const [ready,        setReady]        = useState(false);
   const [selNode,      setSelNode]      = useState<SelNode | null>(null);
 
-  // Pre-compute derived edges (stable across renders)
-  const sharedEdges = deriveSharedEdges(nodes, edges);
+  // Pre-compute derived edges — useMemo evita novo array a cada render (quebraria o useEffect)
+  const sharedEdges = useMemo(() => deriveSharedEdges(nodes, edges), [nodes, edges]);
 
   const zoomIn  = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
