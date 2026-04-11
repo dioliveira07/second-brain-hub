@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X, FileCode, ArrowRight, GitBranch } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { X, FileCode, ArrowRight, GitBranch, Layers } from "lucide-react";
 
 // ─── Layer colours ────────────────────────────────────────────────────────────
 const LAYERS: Record<string, { color: string; label: string }> = {
@@ -192,12 +192,147 @@ interface SelNode {
   importedBy: string[];
 }
 
+// ─── Sidebar (full-height, matches GraphClient NodeSidebar) ───────────────────
+function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) {
+  const accent = LAYERS[node.layer]?.color ?? "#5a7a9a";
+
+  return (
+    <div
+      style={{
+        position:      "absolute",
+        top: 0, right: 0, bottom: 0,
+        width:         280,
+        background:    "rgba(2,6,23,0.97)",
+        borderLeft:    `1px solid ${accent}30`,
+        backdropFilter:"blur(20px)",
+        display:       "flex",
+        flexDirection: "column",
+        zIndex:        30,
+        animation:     "fade-left 0.2s cubic-bezier(.16,1,.3,1) both",
+        boxShadow:     `-8px 0 32px ${accent}10`,
+      }}
+    >
+      {/* Linha neon topo */}
+      <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${accent}88, transparent)` }} />
+
+      {/* Header */}
+      <div style={{ padding: "1rem", borderBottom: `1px solid ${accent}18`, display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: `${accent}12`, border: `1px solid ${accent}33`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+          <FileCode size={16} color={accent} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+            {LAYERS[node.layer]?.label}
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "0.9rem", fontWeight: 700, color: "var(--text)", wordBreak: "break-all", lineHeight: 1.3, textShadow: `0 0 10px ${accent}44` }}>
+            {node.label.split("/").pop()}
+          </div>
+          {node.label.includes("/") && (
+            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)", marginTop: "0.1rem" }}>
+              {node.label.split("/").slice(0, -1).join("/")}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--dim)", padding: 4, flexShrink: 0 }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = accent)}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--dim)")}
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "0.85rem 1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {/* Layer badge */}
+        <div>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: accent, background: `${accent}18`, border: `1px solid ${accent}44`, borderRadius: 4, padding: "2px 8px", letterSpacing: "0.08em" }}>
+            {LAYERS[node.layer]?.label}
+          </span>
+        </div>
+
+        {/* Imports to */}
+        {node.importsTo.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+              <ArrowRight size={11} color="var(--cyan)" />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                importa ({node.importsTo.length})
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              {node.importsTo.map((f) => {
+                const tgt = SIM_NODES.find((n) => n.label === f);
+                const c   = LAYERS[tgt?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+                return (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.split("/").pop()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Imported by */}
+        {node.importedBy.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+              <GitBranch size={11} color="#a78bfa" />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                importado por ({node.importedBy.length})
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              {node.importedBy.map((f) => {
+                const src = SIM_NODES.find((n) => n.label === f);
+                const c   = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+                return (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 6px", background: "var(--bg-panel)", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: c, flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.split("/").pop()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Linha neon rodapé */}
+      <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${accent}44, transparent)` }} />
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function DepsGraphClient() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef     = useRef<unknown>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [selNode,  setSelNode]  = useState<SelNode | null>(null);
+  const containerRef                    = useRef<HTMLDivElement>(null);
+  const graphRef                        = useRef<unknown>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [ready,        setReady]        = useState(false);
+  const [selNode,      setSelNode]      = useState<SelNode | null>(null);
+
+  const zoomIn  = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = graphRef.current as any;
+    if (!g) return;
+    g.zoomTo?.((g.getZoom?.() ?? 1) * 1.3, undefined, { duration: 250 });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = graphRef.current as any;
+    if (!g) return;
+    g.zoomTo?.((g.getZoom?.() ?? 1) / 1.3, undefined, { duration: 250 });
+  }, []);
+
+  const fitView = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (graphRef.current as any)?.fitView?.(undefined, { duration: 400 });
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -225,29 +360,36 @@ export function DepsGraphClient() {
         const gNodes = SIM_NODES.map((n) => {
           const color   = LAYERS[n.layer]?.color ?? "#5a7a9a";
           const d       = deg[n.id] ?? 0;
-          const size    = 18 + (d / maxDeg) * 26;
+          const size    = 20 + (d / maxDeg) * 24;
           const name    = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? n.label;
-          const showLbl = d >= 5 || n.layer === "entry" || n.layer === "core";
+          const isHub   = d >= 5 || n.layer === "entry";
+          const icon    = isHub ? name.slice(0, 2).toUpperCase() : name.slice(0, 2);
 
           return {
             id:    n.id,
             style: {
               size,
-              fill:          `${color}12`,
-              stroke:        color,
-              lineWidth:     1.5,
-              shadowColor:   color,
-              shadowBlur:    showLbl ? 14 : 8,
-              label:         showLbl,
-              labelText:     name,
-              labelFill:     color,
-              labelFontFamily: "'Fira Code', monospace",
-              labelFontSize:  10,
-              labelOffsetY:   6,
+              fill:             isHub ? `${color}0d` : `${color}0a`,
+              stroke:           color,
+              lineWidth:        isHub ? 2.5 : 1.5,
+              shadowColor:      color,
+              shadowBlur:       isHub ? 20 : 10,
+              label:            isHub,
+              labelText:        name,
+              labelFill:        isHub ? color : "#94a3b8",
+              labelFontFamily:  "'Fira Code', monospace",
+              labelFontSize:    isHub ? 11 : 9,
+              labelMaxWidth:    150,
+              labelOffsetY:     6,
+              labelWordWrap:    false,
               labelBackground:        true,
-              labelBackgroundFill:    "rgba(2,6,23,0.88)",
+              labelBackgroundFill:    "rgba(2,6,23,0.85)",
               labelBackgroundRadius:  3,
-              labelBackgroundPadding: [2, 6, 2, 6] as [number,number,number,number],
+              labelBackgroundPadding: [2, 7, 2, 7] as [number,number,number,number],
+              iconText:        icon,
+              iconFill:        color,
+              iconFontSize:    isHub ? 11 : 9,
+              iconFontFamily:  "'Fira Code', monospace",
             },
             data: {
               layer:     n.layer,
@@ -265,11 +407,13 @@ export function DepsGraphClient() {
             source: e.s,
             target: e.t,
             style:  {
-              stroke:       `${color}38`,
-              lineWidth:    1,
-              opacity:      0.75,
-              endArrow:     true,
-              endArrowSize: 4,
+              stroke:      `${color}40`,
+              lineWidth:   1,
+              opacity:     0.7,
+              lineDash:    [6, 5],
+              shadowColor: color,
+              shadowBlur:  3,
+              endArrow:    false,
             },
           };
         });
@@ -283,7 +427,6 @@ export function DepsGraphClient() {
           background:  "transparent",
           data:        { nodes: gNodes, edges: gEdges },
 
-          // ── Radial layout — same algorithm as /graph page ─────────────────
           layout: {
             type:                       "radial",
             nodeSize:                   44,
@@ -291,7 +434,7 @@ export function DepsGraphClient() {
             linkDistance:               240,
             preventOverlap:             true,
             maxPreventOverlapIteration: 200,
-            sortBy:                     "layer",   // group same-layer nodes on each ring
+            sortBy:                     "layer",
             sortStrength:               60,
           },
 
@@ -300,8 +443,8 @@ export function DepsGraphClient() {
             state: {
               active: {
                 label:      true,
-                lineWidth:  2.5,
-                shadowBlur: 22,
+                lineWidth:  3,
+                shadowBlur: 28,
                 zIndex:     100,
               },
               selected: {
@@ -312,16 +455,16 @@ export function DepsGraphClient() {
                 shadowColor: "#fbbf24",
                 zIndex:      100,
               },
-              inactive: { opacity: 0.14, shadowBlur: 0 },
+              inactive: { opacity: 0.18, shadowBlur: 0 },
             },
           },
 
           edge: {
-            type:  "line",
+            type:  "quadratic",
             state: {
-              active:   { opacity: 0.9, lineWidth: 1.5 },
-              selected: { opacity: 1,   lineWidth: 2   },
-              inactive: { opacity: 0.05 },
+              active:   { opacity: 0.9, lineWidth: 1.5, shadowBlur: 6 },
+              selected: { opacity: 1,   lineWidth: 2,   shadowBlur: 8 },
+              inactive: { opacity: 0.06 },
             },
           },
 
@@ -338,7 +481,21 @@ export function DepsGraphClient() {
 
         await graph.render();
 
-        // ── Click → show detail panel ─────────────────────────────────────────
+        // ── Flow animation nas arestas ────────────────────────────────────────
+        graph.getEdgeData().forEach((edge: unknown) => {
+          try {
+            const id  = (edge as { id: string }).id;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const el  = (graph as any).context?.element?.getElement?.(id);
+            const key = el?.getShape?.("key") ?? el?.children?.[0];
+            key?.animate?.(
+              [{ lineDashOffset: 22 }, { lineDashOffset: 0 }],
+              { duration: 5000, iterations: Infinity, easing: "linear" },
+            );
+          } catch {}
+        });
+
+        // ── Click → detail sidebar ────────────────────────────────────────────
         graph.on("node:click", (evt: unknown) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const e      = evt as any;
@@ -350,8 +507,8 @@ export function DepsGraphClient() {
             id:         nodeId,
             label:      node.label,
             layer:      node.layer,
-            importsTo:  SIM_EDGES.filter((e) => e.s === nodeId).map((e) => SIM_NODES.find((n) => n.id === e.t)?.label ?? e.t),
-            importedBy: SIM_EDGES.filter((e) => e.t === nodeId).map((e) => SIM_NODES.find((n) => n.id === e.s)?.label ?? e.s),
+            importsTo:  SIM_EDGES.filter((ed) => ed.s === nodeId).map((ed) => SIM_NODES.find((n) => n.id === ed.t)?.label ?? ed.t),
+            importedBy: SIM_EDGES.filter((ed) => ed.t === nodeId).map((ed) => SIM_NODES.find((n) => n.id === ed.s)?.label ?? ed.s),
           });
         });
 
@@ -360,6 +517,7 @@ export function DepsGraphClient() {
         if (!destroyed) {
           graphRef.current = graph;
           setLoading(false);
+          setReady(true);
         } else {
           graph.destroy();
         }
@@ -379,7 +537,9 @@ export function DepsGraphClient() {
     };
   }, []);
 
-  const accent = selNode ? (LAYERS[selNode.layer]?.color ?? "#5a7a9a") : "#06b6d4";
+  const LEGEND = Object.entries(LAYERS)
+    .filter(([k]) => k !== "entry") // entry já fica óbvio pelo centro
+    .map(([, v]) => v);
 
   return (
     <div
@@ -395,48 +555,13 @@ export function DepsGraphClient() {
       }}
     >
       {/* Grid de fundo */}
-      <div
-        aria-hidden
-        style={{
-          position:        "absolute",
-          inset:           0,
-          backgroundImage: `
-            linear-gradient(rgba(6,182,212,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(6,182,212,0.04) 1px, transparent 1px)
-          `,
-          backgroundSize:  "48px 48px",
-          pointerEvents:   "none",
-          zIndex:          0,
-        }}
-      />
+      <div aria-hidden style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(rgba(6,182,212,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.04) 1px, transparent 1px)`, backgroundSize: "48px 48px", pointerEvents: "none", zIndex: 0 }} />
 
       {/* Scanlines */}
-      <div
-        aria-hidden
-        style={{
-          position:        "absolute",
-          inset:           0,
-          backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)",
-          pointerEvents:   "none",
-          zIndex:          1,
-        }}
-      />
+      <div aria-hidden style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)", pointerEvents: "none", zIndex: 1 }} />
 
       {/* Glow central */}
-      <div
-        aria-hidden
-        style={{
-          position:      "absolute",
-          top:           "50%",
-          left:          "50%",
-          transform:     "translate(-50%, -50%)",
-          width:         "60%",
-          height:        "60%",
-          background:    "radial-gradient(ellipse, rgba(6,182,212,0.04) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex:        0,
-        }}
-      />
+      <div aria-hidden style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "60%", height: "60%", background: "radial-gradient(ellipse, rgba(6,182,212,0.04) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
       {/* Loading */}
       {loading && (
@@ -448,103 +573,49 @@ export function DepsGraphClient() {
         </div>
       )}
 
-      {/* G6 container */}
-      <div ref={containerRef} style={{ position: "absolute", inset: 0, zIndex: 2 }} />
-
-      {/* Selected node panel */}
-      {selNode && (
-        <div style={{
-          position:       "absolute",
-          top:            "1rem",
-          right:          "1rem",
-          width:          272,
-          background:     "rgba(2,6,23,0.97)",
-          border:         `1px solid ${accent}30`,
-          borderLeft:     `3px solid ${accent}`,
-          borderRadius:   "var(--r-lg)",
-          padding:        "1rem 1.15rem",
-          zIndex:         20,
-          backdropFilter: "blur(12px)",
-          boxShadow:      `-6px 0 24px ${accent}10`,
-          animation:      "fade-left 0.2s cubic-bezier(.16,1,.3,1) both",
-        }}>
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", minWidth: 0, flex: 1 }}>
-              <FileCode size={12} color={accent} style={{ flexShrink: 0 }} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {selNode.label.split("/").pop()}
-                </div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "var(--muted-foreground)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {selNode.label}
-                </div>
-              </div>
-            </div>
+      {/* Toolbar */}
+      {ready && (
+        <div style={{ position: "absolute", top: 12, right: selNode ? 292 : 12, display: "flex", flexDirection: "column", gap: 6, zIndex: 20, transition: "right 200ms ease" }}>
+          {([
+            { icon: "+", action: zoomIn,  title: "Zoom In"  },
+            { icon: "−", action: zoomOut, title: "Zoom Out" },
+            { icon: "⊡", action: fitView, title: "Fit View" },
+          ] as const).map(({ icon, action, title }) => (
             <button
-              onClick={() => setSelNode(null)}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--dim)", padding: 2, flexShrink: 0 }}
+              key={title}
+              onClick={action}
+              title={title}
+              style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(2,8,18,0.9)", border: "1px solid rgba(6,182,212,0.2)", borderRadius: 6, color: "#4a7a9b", fontFamily: "var(--mono)", fontSize: "1rem", cursor: "pointer", backdropFilter: "blur(8px)", transition: "all 150ms" }}
+              onMouseEnter={(e) => { const el = e.currentTarget; el.style.color = "#06b6d4"; el.style.borderColor = "rgba(6,182,212,.5)"; el.style.boxShadow = "0 0 8px rgba(6,182,212,0.2)"; }}
+              onMouseLeave={(e) => { const el = e.currentTarget; el.style.color = "#4a7a9b"; el.style.borderColor = "rgba(6,182,212,0.2)"; el.style.boxShadow = "none"; }}
             >
-              <X size={12} />
+              {icon}
             </button>
-          </div>
-
-          {/* Layer badge */}
-          <span style={{
-            fontFamily:    "var(--mono)",
-            fontSize:      "0.62rem",
-            color:         accent,
-            background:    `${accent}14`,
-            border:        `1px solid ${accent}28`,
-            borderRadius:  "3px",
-            padding:       "1px 7px",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}>
-            {LAYERS[selNode.layer]?.label}
-          </span>
-
-          {/* Imports to */}
-          {selNode.importsTo.length > 0 && (
-            <div style={{ marginTop: "0.85rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: "0.35rem" }}>
-                <ArrowRight size={9} color="var(--cyan)" />
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "var(--cyan)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  importa ({selNode.importsTo.length})
-                </span>
-              </div>
-              {selNode.importsTo.map((f) => (
-                <div
-                  key={f}
-                  style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                >
-                  {f.split("/").pop()}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Imported by */}
-          {selNode.importedBy.length > 0 && (
-            <div style={{ marginTop: "0.75rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: "0.35rem" }}>
-                <GitBranch size={9} color="#a78bfa" />
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  importado por ({selNode.importedBy.length})
-                </span>
-              </div>
-              {selNode.importedBy.map((f) => (
-                <div
-                  key={f}
-                  style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                >
-                  {f.split("/").pop()}
-                </div>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
       )}
+
+      {/* Legenda interna */}
+      {ready && (
+        <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", flexDirection: "column", gap: 5, zIndex: 20, background: "rgba(2,8,18,0.88)", border: "1px solid rgba(6,182,212,0.1)", borderRadius: 8, padding: "8px 12px", backdropFilter: "blur(12px)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+            <Layers size={10} color="rgba(6,182,212,0.5)" />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "rgba(6,182,212,0.5)", letterSpacing: "0.14em", textTransform: "uppercase" }}>// layers</span>
+          </div>
+          {LEGEND.map(({ label, color }) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, boxShadow: `0 0 5px ${color}`, flexShrink: 0 }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* G6 canvas */}
+      <div ref={containerRef} style={{ position: "absolute", inset: 0, zIndex: 2 }} />
+
+      {/* Sidebar */}
+      {selNode && <NodeSidebar node={selNode} onClose={() => setSelNode(null)} />}
     </div>
   );
 }
