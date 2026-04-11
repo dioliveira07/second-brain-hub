@@ -61,9 +61,12 @@ export default function DepsGraphPage() {
             { label: "pages",      color: "#06b6d4" },
             { label: "components", color: "#a78bfa" },
             { label: "hooks",      color: "#22c55e" },
-            { label: "services",   color: "#fbbf24" },
+            { label: "lib",        color: "#fbbf24" },
             { label: "utils",      color: "#f97316" },
-            { label: "types",      color: "#f87171" },
+            { label: "backend",    color: "#f87171" },
+            { label: "operator",   color: "#fb923c" },
+            { label: "core",       color: "#e2e8f0" },
+            { label: "orphan",     color: "#334155" },
           ].map(({ label, color }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}`, display: "inline-block" }} />

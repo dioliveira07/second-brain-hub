@@ -16,6 +16,7 @@ const LAYERS: Record<string, { color: string; label: string; size: number }> = {
   backend:   { color: "#f87171", label: "backend",    size: 32 },
   operator:  { color: "#fb923c", label: "operator",   size: 26 },
   core:      { color: "#e2e8f0", label: "core",       size: 36 },
+  orphan:    { color: "#334155", label: "orphan",     size: 16 },
 };
 
 // ─── Simulated file nodes ─────────────────────────────────────────────────────
@@ -81,6 +82,19 @@ const SIM_NODES = [
   { id: "be_mcp",       label: "backend/mcp-server.js",   layer: "backend",    imports: 3 },
   { id: "be_agent",     label: "backend/agent-analyzer.js",layer: "backend",   imports: 1 },
   { id: "be_cdp",       label: "backend/load_cookies_cdp.js",layer: "core",    imports: 0 },
+
+  // Órfãos — arquivos sem imports nem importados (config, standalone)
+  { id: "eslint_cfg",   label: "eslint.config.js",      layer: "orphan",   imports: 0 },
+  { id: "tailwind_cfg", label: "tailwind.config.ts",    layer: "orphan",   imports: 0 },
+  { id: "vite_cfg",     label: "vite.config.ts",        layer: "orphan",   imports: 0 },
+  { id: "vitest_cfg",   label: "vitest.config.ts",      layer: "orphan",   imports: 0 },
+  { id: "postcss_cfg",  label: "postcss.config.js",     layer: "orphan",   imports: 0 },
+  { id: "pw_cfg",       label: "playwright.config.ts",  layer: "orphan",   imports: 0 },
+  { id: "pw_fix",       label: "playwright-fixture.ts", layer: "orphan",   imports: 0 },
+  { id: "test_setup",   label: "src/test/setup.ts",     layer: "orphan",   imports: 0 },
+  { id: "vite_env",     label: "src/vite-env.d.ts",     layer: "orphan",   imports: 0 },
+  { id: "porto_bkm",    label: "backend/porto_bookmarklet.js", layer: "orphan", imports: 0 },
+  { id: "gmail_auth",   label: "backend/gmail_auth_local.js", layer: "orphan", imports: 0 },
 
   // Backend operators
   { id: "amil_prod",    label: "backend/amil_producao.js",   layer: "operator", imports: 3 },
@@ -221,42 +235,65 @@ interface SelNode {
   importsTo:  string[];
 }
 
+// ─── Pré-calcular grau de cada nó (in + out) ─────────────────────────────────
+function getDegreeMap(): Record<string, number> {
+  const map: Record<string, number> = {};
+  SIM_NODES.forEach((n) => { map[n.id] = 0; });
+  SIM_EDGES.forEach((e) => {
+    map[e.source] = (map[e.source] ?? 0) + 1;
+    map[e.target] = (map[e.target] ?? 0) + 1;
+  });
+  return map;
+}
+
 // ─── Transform to G6 format ───────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildG6Data(): any {
+  const degrees = getDegreeMap();
+  const maxDeg  = Math.max(...Object.values(degrees));
+
   const nodes = SIM_NODES.map((n) => {
-    const layer = LAYERS[n.layer];
-    const color = layer.color;
-    const size  = layer.size;
-    const name  = n.label.split("/").pop() ?? n.label;
+    const layer  = LAYERS[n.layer];
+    const color  = layer.color;
+    const deg    = degrees[n.id] ?? 0;
+
+    // Tamanho proporcional ao grau — como o Obsidian
+    const minSize = 14;
+    const maxSize = 52;
+    const size    = minSize + ((deg / Math.max(maxDeg, 1)) * (maxSize - minSize));
+
+    const name   = n.label.split("/").pop() ?? n.label;
+    const isHub  = deg >= 5; // nós altamente conectados sempre mostram label
 
     return {
       id: n.id,
       style: {
         size,
-        fill:        `${color}10`,
+        fill:        `${color}${deg >= 4 ? "18" : "0c"}`,
         stroke:      color,
-        lineWidth:   n.layer === "entry" ? 2.5 : 1.5,
+        lineWidth:   deg >= 6 ? 2.5 : 1.5,
         shadowColor: color,
-        shadowBlur:  n.layer === "entry" || n.layer === "core" ? 18 : 8,
-        label:       n.layer === "entry" || n.layer === "core" || n.layer === "backend",
-        labelText:   name,
-        labelFill:   color,
+        shadowBlur:  deg >= 5 ? 20 : deg >= 2 ? 10 : 4,
+
+        label:           isHub,
+        labelText:       name,
+        labelFill:       color,
         labelFontFamily: "'Fira Code', monospace",
-        labelFontSize:   n.layer === "entry" ? 11 : 9,
+        labelFontSize:   isHub ? 10 : 8,
         labelMaxWidth:   160,
         labelOffsetY:    6,
         labelWordWrap:   false,
         labelBackground:        true,
-        labelBackgroundFill:    "rgba(2,6,23,0.9)",
+        labelBackgroundFill:    "rgba(2,6,23,0.92)",
         labelBackgroundRadius:  3,
         labelBackgroundPadding: [2, 6, 2, 6],
-        iconText:      name.replace(/\.(tsx?|jsx?|ts|js)$/, "").slice(0, 3),
+
+        iconText:      size > 24 ? name.replace(/\.(tsx?|jsx?|ts|js)$/, "").slice(0, 2) : "",
         iconFill:      color,
-        iconFontSize:  n.layer === "entry" ? 11 : 8,
+        iconFontSize:  size > 32 ? 10 : 8,
         iconFontFamily: "'Fira Code', monospace",
       },
-      data: { layer: n.layer, label: n.label, imports: n.imports, comboId: n.layer },
+      data: { layer: n.layer, label: n.label, imports: n.imports, degree: deg },
     };
   });
 
@@ -268,15 +305,15 @@ function buildG6Data(): any {
       source: e.source,
       target: e.target,
       style:  {
-        stroke:      `${color}35`,
-        lineWidth:   1,
-        opacity:     0.7,
-        endArrow:    true,
-        endArrowSize: 5,
-        endArrowFill: `${color}60`,
-        lineDash:    [5, 4],
-        shadowColor: color,
-        shadowBlur:  2,
+        stroke:       `${color}30`,
+        lineWidth:    1,
+        opacity:      0.65,
+        endArrow:     true,
+        endArrowSize: 4,
+        endArrowFill: `${color}55`,
+        lineDash:     [4, 4],
+        shadowColor:  color,
+        shadowBlur:   1.5,
       },
     };
   });
@@ -313,15 +350,32 @@ export function DepsGraphClient() {
           data:        buildG6Data(),
 
           layout: {
-            type:                       "radial",
-            unitRadius:                 120,
-            linkDistance:               220,
-            nodeSize:                   44,
-            preventOverlap:             true,
-            maxPreventOverlapIteration: 800,
-            strictRadial:               false,
-            sortBy:                     "layer",
-            sortStrength:               60,
+            type: "force",
+
+            // ── Força central: puxa tudo para o centro ──────────
+            // Maior = mais compacto. 0.05–0.2 é o range útil.
+            center:         [width / 2, height / 2],
+            gravity:        0.08,
+
+            // ── Força de repulsão: empurra nós uns dos outros ───
+            // Negativo = repulsão. Mais negativo = mais espaçado.
+            // Com ~60 nós, -600 a -900 evita sobreposição.
+            nodeStrength:   -700,
+
+            // ── Link force + distância: elástico entre conectados
+            // edgeStrength: quão forte puxa (0–1)
+            // linkDistance: comprimento ideal do "elástico" em px
+            edgeStrength:   0.5,
+            linkDistance:   110,
+
+            // ── Colisão: raio físico para evitar sobreposição ───
+            collideStrength: 1,
+            nodeSize:        50,   // raio de colisão por nó
+            preventOverlap:  true,
+
+            // ── Simulação: decai devagar → mais tempo para estabilizar
+            alphaDecay:  0.015,
+            alphaMin:    0.001,
           },
 
           node: {
