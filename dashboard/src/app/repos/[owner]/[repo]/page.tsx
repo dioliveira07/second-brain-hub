@@ -93,9 +93,33 @@ export default async function RepoDetailPage({ params }: PageParams) {
               </div>
             )}
           </div>
-          <span className={`badge badge-${isDone ? "done" : "pending"}`} style={{ alignSelf: "flex-start" }}>
-            {detail.status}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", alignSelf: "flex-start" }}>
+            <span className={`badge badge-${isDone ? "done" : "pending"}`}>
+              {detail.status}
+            </span>
+            {detail.directory_map && (
+              <Link
+                href={`/repos/${owner}/${repo}/explore`}
+                style={{
+                  display:      "flex",
+                  alignItems:   "center",
+                  gap:          "5px",
+                  fontFamily:   "var(--mono)",
+                  fontSize:     "0.72rem",
+                  color:        "var(--cyan)",
+                  background:   "rgba(6,182,212,0.07)",
+                  border:       "1px solid rgba(6,182,212,0.25)",
+                  borderRadius: "var(--r)",
+                  padding:      "4px 10px",
+                  textDecoration: "none",
+                  transition:   "background 0.15s",
+                }}
+              >
+                <FolderTree size={11} />
+                Explorar
+              </Link>
+            )}
+          </div>
         </div>
       </FadeIn>
 
