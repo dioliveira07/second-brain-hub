@@ -383,13 +383,18 @@ def identify_key_files(repo_path: str, stack: dict) -> list[dict]:
     return results[:1000]
 
 
+CLAUDE_BIN = "/usr/local/bin/claude"
+
+
 def generate_summary(repo_path: str, stack: dict, key_files: list[dict]) -> str:
-    """Gera resumo arquitetural. Usa Claude Haiku se ANTHROPIC_API_KEY estiver disponível."""
+    """Gera resumo arquitetural via Claude Code CLI (mesmo padrão do synthesis.py)."""
+    import subprocess
+
     root = Path(repo_path)
 
-    # Read content of key files up to ~50KB total
+    # Read content of key files up to ~40KB total
     total_content = ""
-    budget = 50_000  # ~50KB
+    budget = 40_000
 
     for kf in key_files:
         if len(total_content) >= budget:
@@ -406,34 +411,30 @@ def generate_summary(repo_path: str, stack: dict, key_files: list[dict]) -> str:
         except Exception:
             continue
 
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    prompt = (
+        f"Analise este repositório e gere um resumo arquitetural estruturado em português.\n\n"
+        f"Stack detectada: {json.dumps(stack, ensure_ascii=False)}\n\n"
+        f"Arquivos principais:\n{total_content}\n\n"
+        f"Responda EXATAMENTE neste formato (sem introdução, direto ao ponto):\n"
+        f"## Stack\n<linguagens, frameworks, infra em bullets>\n\n"
+        f"## Padrão Arquitetural\n<MVC, hexagonal, microservices, monólito, CRUD simples, etc.>\n\n"
+        f"## Autenticação\n<JWT, OAuth, Supabase Auth, sessions, nenhuma, etc.>\n\n"
+        f"## Deploy\n<Docker, Vercel, Railway, sem config detectada, etc.>\n\n"
+        f"## Pontos de Entrada\n<arquivos ou endpoints principais>\n\n"
+        f"## Dependências Externas\n<APIs, serviços de terceiros, SDKs>\n"
+    )
 
-    if anthropic_key:
-        try:
-            import anthropic as anthropic_sdk
-
-            client = anthropic_sdk.Anthropic(api_key=anthropic_key)
-            prompt = (
-                f"Analise este repositório e gere um resumo arquitetural estruturado.\n\n"
-                f"Stack detectada: {json.dumps(stack, ensure_ascii=False)}\n\n"
-                f"Arquivos principais:\n{total_content}\n\n"
-                f"Responda EXATAMENTE neste formato:\n"
-                f"## Stack\n<linguagens, frameworks, infra>\n\n"
-                f"## Padrão Arquitetural\n<MVC, hexagonal, microservices, monólito, etc.>\n\n"
-                f"## Autenticação\n<JWT, OAuth, sessions, nenhuma, etc.>\n\n"
-                f"## Deploy\n<Docker, Kubernetes, Vercel, Railway, etc.>\n\n"
-                f"## Pontos de Entrada\n<arquivos/endpoints principais>\n\n"
-                f"## Dependências Externas\n<APIs externas, serviços de terceiros>\n"
-            )
-            message = client.messages.create(
-                model="claude-haiku-4-5",
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return message.content[0].text
-        except Exception as e:
-            # Fallback to basic summary on any error
-            pass
+    try:
+        result = subprocess.run(
+            [CLAUDE_BIN, "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
 
     # Basic summary without Claude API
     repo_name = Path(repo_path).name

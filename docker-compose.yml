@@ -17,7 +17,7 @@ services:
         condition: service_healthy
     volumes:
       - git-mirrors:/data/repos
-      - /root/.local/share/claude/versions/2.1.96:/usr/local/bin/claude:ro
+      - /root/.local/share/claude/versions/2.1.101:/usr/local/bin/claude:ro
       - /root/.claude.json:/root/.claude.json:ro
       - /root/.claude:/root/.claude:ro
       - /root/skills:/root/skills:ro
@@ -35,6 +35,9 @@ services:
       - qdrant
     volumes:
       - git-mirrors:/data/repos
+      - /root/.local/share/claude/versions/2.1.101:/usr/local/bin/claude:ro
+      - /root/.claude.json:/root/.claude.json:ro
+      - /root/.claude:/root/.claude:ro
     environment:
       # Limita threads do modelo de embeddings (sentence-transformers/torch/numpy)
       OMP_NUM_THREADS: "1"
