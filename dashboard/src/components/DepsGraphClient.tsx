@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, FileCode, ArrowRight, GitBranch } from "lucide-react";
 
 // ─── Layer colours ────────────────────────────────────────────────────────────
@@ -183,21 +183,7 @@ const SIM_EDGES = [
   { s: "sul_login",    t: "be_cdp"       },
 ];
 
-// ─── Physics node ─────────────────────────────────────────────────────────────
-interface PNode {
-  id:     string;
-  label:  string;
-  layer:  string;
-  x:      number;
-  y:      number;
-  vx:     number;
-  vy:     number;
-  r:      number;
-  pinned: boolean;
-  degree: number;
-}
-
-// ─── Selection detail ──────────────────────────────────────────────────────────
+// ─── Selection detail ─────────────────────────────────────────────────────────
 interface SelNode {
   id:         string;
   label:      string;
@@ -206,427 +192,286 @@ interface SelNode {
   importedBy: string[];
 }
 
-// ─── Hex → rgba ───────────────────────────────────────────────────────────────
-function hex(color: string, a: number) {
-  const r = parseInt(color.slice(1, 3), 16);
-  const g = parseInt(color.slice(3, 5), 16);
-  const b = parseInt(color.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-// ─── Draw arrow tip ───────────────────────────────────────────────────────────
-function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, r: number, color: string) {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const tx    = x2 - Math.cos(angle) * (r + 2);
-  const ty    = y2 - Math.sin(angle) * (r + 2);
-  const size  = 6;
-
-  ctx.beginPath();
-  ctx.moveTo(x1 + Math.cos(angle) * r, y1 + Math.sin(angle) * r);
-  ctx.lineTo(tx, ty);
-  ctx.strokeStyle = hex(color, 0.25);
-  ctx.lineWidth   = 1;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(tx - size * Math.cos(angle - 0.4), ty - size * Math.sin(angle - 0.4));
-  ctx.lineTo(tx - size * Math.cos(angle + 0.4), ty - size * Math.sin(angle + 0.4));
-  ctx.closePath();
-  ctx.fillStyle = hex(color, 0.35);
-  ctx.fill();
-}
-
-// ─── Draw node ────────────────────────────────────────────────────────────────
-function drawNode(ctx: CanvasRenderingContext2D, n: PNode, selected: boolean, hovered: boolean, scale: number) {
-  const color = LAYERS[n.layer]?.color ?? "#5a7a9a";
-  const r     = n.r;
-
-  // Glow
-  if (selected || hovered || n.degree >= 5) {
-    ctx.save();
-    ctx.shadowColor = color;
-    ctx.shadowBlur  = selected ? 28 : hovered ? 18 : 10;
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "transparent";
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // Fill
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  ctx.fillStyle   = hex(color, selected ? 0.22 : 0.1);
-  ctx.fill();
-
-  // Border
-  ctx.beginPath();
-  ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-  ctx.strokeStyle = hex(color, selected ? 1 : hovered ? 0.9 : 0.65);
-  ctx.lineWidth   = selected ? 2.5 : 1.5;
-  ctx.stroke();
-
-  // Label — sempre visível para hubs, hover para o resto
-  const name = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? "";
-  const showLabel = selected || hovered || n.degree >= 5 || n.layer === "entry" || n.layer === "core";
-  if (showLabel && scale > 0.35) {
-    const fs = Math.max(9, Math.min(13, r * 0.85));
-    ctx.font         = `${fs}px "Fira Code", monospace`;
-    ctx.textAlign    = "center";
-    ctx.textBaseline = "middle";
-    const tw = ctx.measureText(name).width;
-    const pad = 4;
-
-    // Label background
-    ctx.fillStyle = "rgba(2,6,23,0.88)";
-    ctx.beginPath();
-    ctx.roundRect(n.x - tw / 2 - pad, n.y + r + 4, tw + pad * 2, fs + 6, 3);
-    ctx.fill();
-
-    ctx.fillStyle = hex(color, selected ? 1 : 0.85);
-    ctx.fillText(name, n.x, n.y + r + 4 + (fs + 6) / 2);
-  }
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 export function DepsGraphClient() {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const stateRef   = useRef<{
-    nodes:    PNode[];
-    raf:      number;
-    scale:    number;
-    ox:       number;
-    oy:       number;
-    drag:     { nodeId: string | null; panStart: { x: number; y: number } | null };
-    hovered:  string | null;
-    selected: string | null;
-  } | null>(null);
-  const [selNode, setSelNode] = useState<SelNode | null>(null);
-
-  // ── build selection detail ──────────────────────────────────────────────────
-  const selectNode = useCallback((id: string | null) => {
-    stateRef.current!.selected = id;
-    if (!id) { setSelNode(null); return; }
-    const node = SIM_NODES.find((n) => n.id === id);
-    if (!node) return;
-    setSelNode({
-      id,
-      label:      node.label,
-      layer:      node.layer,
-      importsTo:  SIM_EDGES.filter((e) => e.s === id).map((e) => SIM_NODES.find((n) => n.id === e.t)?.label ?? e.t),
-      importedBy: SIM_EDGES.filter((e) => e.t === id).map((e) => SIM_NODES.find((n) => n.id === e.s)?.label ?? e.s),
-    });
-  }, []);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef     = useRef<unknown>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [selNode,  setSelNode]  = useState<SelNode | null>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!containerRef.current) return;
+    let destroyed = false;
 
-    const W = canvas.parentElement?.clientWidth  ?? 900;
-    const H = canvas.parentElement?.clientHeight ?? 600;
-    canvas.width  = W;
-    canvas.height = H;
-    const cx = W / 2, cy = H / 2;
+    const init = async () => {
+      try {
+        const { Graph } = await import("@antv/g6");
+        if (destroyed) return;
 
-    // ── Degree map ────────────────────────────────────────────────────────────
-    const deg: Record<string, number> = {};
-    SIM_NODES.forEach((n) => { deg[n.id] = 0; });
-    SIM_EDGES.forEach((e) => { deg[e.s] = (deg[e.s] ?? 0) + 1; deg[e.t] = (deg[e.t] ?? 0) + 1; });
-    const maxDeg = Math.max(...Object.values(deg), 1);
+        const el     = containerRef.current!;
+        const width  = el.clientWidth  || 900;
+        const height = el.clientHeight || 600;
 
-    // ── Concentric ring layout — same algorithm as G6 radial sortBy:comboId ──
-    // Each architectural layer maps to a ring level (distance from center).
-    // Within each ring nodes are sorted by LAYER_ORDER so same-layer nodes
-    // are adjacent, forming clearly visible category arcs on each ring.
-    const LAYER_TO_RING: Record<string, number> = {
-      entry:      0,
-      pages:      1,
-      components: 2,
-      wizard:     2,
-      backend:    2,
-      hooks:      3,
-      lib:        3,
-      operator:   3,
-      utils:      4,
-      ui:         4,
-      core:       4,
-      orphan:     5,
+        // ── Degree map ────────────────────────────────────────────────────────
+        const deg: Record<string, number> = {};
+        SIM_NODES.forEach((n) => { deg[n.id] = 0; });
+        SIM_EDGES.forEach((e) => {
+          deg[e.s] = (deg[e.s] ?? 0) + 1;
+          deg[e.t] = (deg[e.t] ?? 0) + 1;
+        });
+        const maxDeg = Math.max(...Object.values(deg), 1);
+
+        // ── Build G6 node/edge data ───────────────────────────────────────────
+        const gNodes = SIM_NODES.map((n) => {
+          const color   = LAYERS[n.layer]?.color ?? "#5a7a9a";
+          const d       = deg[n.id] ?? 0;
+          const size    = 18 + (d / maxDeg) * 26;
+          const name    = n.label.split("/").pop()?.replace(/\.(tsx?|jsx?|ts|js)$/, "") ?? n.label;
+          const showLbl = d >= 5 || n.layer === "entry" || n.layer === "core";
+
+          return {
+            id:    n.id,
+            style: {
+              size,
+              fill:          `${color}12`,
+              stroke:        color,
+              lineWidth:     1.5,
+              shadowColor:   color,
+              shadowBlur:    showLbl ? 14 : 8,
+              label:         showLbl,
+              labelText:     name,
+              labelFill:     color,
+              labelFontFamily: "'Fira Code', monospace",
+              labelFontSize:  10,
+              labelOffsetY:   6,
+              labelBackground:        true,
+              labelBackgroundFill:    "rgba(2,6,23,0.88)",
+              labelBackgroundRadius:  3,
+              labelBackgroundPadding: [2, 6, 2, 6] as [number,number,number,number],
+            },
+            data: {
+              layer:     n.layer,
+              fullLabel: n.label,
+              degree:    d,
+            },
+          };
+        });
+
+        const gEdges = SIM_EDGES.map((e, i) => {
+          const src   = SIM_NODES.find((n) => n.id === e.s);
+          const color = LAYERS[src?.layer ?? "orphan"]?.color ?? "#5a7a9a";
+          return {
+            id:     `edge-${i}`,
+            source: e.s,
+            target: e.t,
+            style:  {
+              stroke:       `${color}38`,
+              lineWidth:    1,
+              opacity:      0.75,
+              endArrow:     true,
+              endArrowSize: 4,
+            },
+          };
+        });
+
+        const graph = new Graph({
+          container: el,
+          width,
+          height,
+          autoResize:  true,
+          autoFit:     "center",
+          background:  "transparent",
+          data:        { nodes: gNodes, edges: gEdges },
+
+          // ── Radial layout — same algorithm as /graph page ─────────────────
+          layout: {
+            type:                       "radial",
+            nodeSize:                   44,
+            unitRadius:                 130,
+            linkDistance:               240,
+            preventOverlap:             true,
+            maxPreventOverlapIteration: 200,
+            sortBy:                     "layer",   // group same-layer nodes on each ring
+            sortStrength:               60,
+          },
+
+          node: {
+            type:  "circle",
+            state: {
+              active: {
+                label:      true,
+                lineWidth:  2.5,
+                shadowBlur: 22,
+                zIndex:     100,
+              },
+              selected: {
+                label:       true,
+                lineWidth:   3,
+                shadowBlur:  32,
+                stroke:      "#fbbf24",
+                shadowColor: "#fbbf24",
+                zIndex:      100,
+              },
+              inactive: { opacity: 0.14, shadowBlur: 0 },
+            },
+          },
+
+          edge: {
+            type:  "line",
+            state: {
+              active:   { opacity: 0.9, lineWidth: 1.5 },
+              selected: { opacity: 1,   lineWidth: 2   },
+              inactive: { opacity: 0.05 },
+            },
+          },
+
+          behaviors: [
+            "drag-canvas",
+            { type: "zoom-canvas", sensitivity: 0.5, animation: { duration: 200, easing: "ease-out" } },
+            "drag-element",
+            { type: "hover-activate", degree: 1 },
+            "click-select",
+          ],
+
+          plugins: [],
+        });
+
+        await graph.render();
+
+        // ── Click → show detail panel ─────────────────────────────────────────
+        graph.on("node:click", (evt: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const e      = evt as any;
+          const nodeId = e?.target?.id ?? e?.itemId;
+          if (!nodeId) return;
+          const node = SIM_NODES.find((n) => n.id === nodeId);
+          if (!node) return;
+          setSelNode({
+            id:         nodeId,
+            label:      node.label,
+            layer:      node.layer,
+            importsTo:  SIM_EDGES.filter((e) => e.s === nodeId).map((e) => SIM_NODES.find((n) => n.id === e.t)?.label ?? e.t),
+            importedBy: SIM_EDGES.filter((e) => e.t === nodeId).map((e) => SIM_NODES.find((n) => n.id === e.s)?.label ?? e.s),
+          });
+        });
+
+        graph.on("canvas:click", () => setSelNode(null));
+
+        if (!destroyed) {
+          graphRef.current = graph;
+          setLoading(false);
+        } else {
+          graph.destroy();
+        }
+      } catch (err) {
+        if (!destroyed) { console.error("[DepsGraphClient]", err); setLoading(false); }
+      }
     };
-    const RING_RADII = [0, 105, 195, 285, 365, 455];
-    const LAYER_ORDER = ["entry","pages","components","wizard","backend","hooks","lib","operator","utils","ui","core","orphan"];
 
-    // Group nodes by ring, sorted by LAYER_ORDER within each ring
-    const ringGroups: Record<number, typeof SIM_NODES[0][]> = {};
-    SIM_NODES.forEach((n) => {
-      const ring = LAYER_TO_RING[n.layer] ?? 4;
-      if (!ringGroups[ring]) ringGroups[ring] = [];
-      ringGroups[ring].push(n);
-    });
-    Object.values(ringGroups).forEach((arr) => {
-      arr.sort((a, b) => LAYER_ORDER.indexOf(a.layer) - LAYER_ORDER.indexOf(b.layer));
-    });
-
-    // Place nodes on rings
-    const nodes: PNode[] = SIM_NODES.map((n) => {
-      const d      = deg[n.id] ?? 0;
-      const r      = 7 + (d / maxDeg) * 18;
-      const ring   = LAYER_TO_RING[n.layer] ?? 4;
-      const group  = ringGroups[ring];
-      const idx    = group.indexOf(n);
-      const total  = group.length;
-      const angle  = (idx / total) * 2 * Math.PI - Math.PI / 2;
-      const radius = RING_RADII[ring] ?? 455;
-      // Ring 0 special case: spread entry nodes slightly so they don't stack
-      const rEff   = ring === 0 && total > 1 ? 30 : radius;
-      return {
-        id: n.id, label: n.label, layer: n.layer,
-        x: cx + Math.cos(angle) * rEff,
-        y: cy + Math.sin(angle) * rEff,
-        vx: 0, vy: 0, r, pinned: false, degree: d,
-      };
-    });
-
-    // Store anchor positions (ring targets) for spring-back after physics
-    const anchorX: Record<string, number> = {};
-    const anchorY: Record<string, number> = {};
-    nodes.forEach((n) => { anchorX[n.id] = n.x; anchorY[n.id] = n.y; });
-
-    const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-
-    stateRef.current = {
-      nodes, raf: 0, scale: 1, ox: 0, oy: 0,
-      drag: { nodeId: null, panStart: null },
-      hovered: null, selected: null,
-    };
-    const S = stateRef.current;
-
-    // ── Physics tick ──────────────────────────────────────────────────────────
-    // Rings are already organized — physics only resolves overlaps and springs
-    // nodes back to their anchor positions. No gravity / strong repulsion.
-    let tick = 0;
-    const MAX = 120; // short convergence window, then loop just re-renders
-
-    function physics() {
-      if (tick >= MAX) return;
-      const alpha = Math.max(0, 1 - tick / MAX);
-      tick++;
-
-      // 1 — anchor spring: pull each node back to its ring target position
-      for (const p of nodes) {
-        if (p.pinned) continue;
-        p.vx += (anchorX[p.id] - p.x) * 0.18 * alpha;
-        p.vy += (anchorY[p.id] - p.y) * 0.18 * alpha;
-      }
-
-      // 2 — very weak repulsion (only for nearby overlap prevention)
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j];
-          let dx = b.x - a.x || 0.1;
-          let dy = b.y - a.y || 0.1;
-          const d2 = dx * dx + dy * dy;
-          const minD = (a.r + b.r) * 3.5;
-          if (d2 > minD * minD) continue; // only apply to close pairs
-          const d  = Math.sqrt(d2) || 0.1;
-          const f  = (1200 * alpha) / d2;
-          dx /= d; dy /= d;
-          if (!a.pinned) { a.vx -= dx * f; a.vy -= dy * f; }
-          if (!b.pinned) { b.vx += dx * f; b.vy += dy * f; }
-        }
-      }
-
-      // 3 — very weak link spring (cosmetic, won't override anchor)
-      for (const e of SIM_EDGES) {
-        const a = byId[e.s], b = byId[e.t];
-        if (!a || !b) continue;
-        const dx   = b.x - a.x;
-        const dy   = b.y - a.y;
-        const d    = Math.sqrt(dx * dx + dy * dy) || 0.1;
-        const IDEAL = 120;
-        const str  = ((d - IDEAL) / d) * 0.025 * alpha;
-        if (!a.pinned) { a.vx += dx * str; a.vy += dy * str; }
-        if (!b.pinned) { b.vx -= dx * str; b.vy -= dy * str; }
-      }
-
-      // 4 — collision (resolve overlap)
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i], b = nodes[j];
-          const dx  = b.x - a.x || 0.1;
-          const dy  = b.y - a.y || 0.1;
-          const d   = Math.sqrt(dx * dx + dy * dy) || 0.1;
-          const min = a.r + b.r + 5;
-          if (d < min) {
-            const push = (min - d) / d * 0.55;
-            if (!a.pinned) { a.vx -= dx * push * 0.5; a.vy -= dy * push * 0.5; }
-            if (!b.pinned) { b.vx += dx * push * 0.5; b.vy += dy * push * 0.5; }
-          }
-        }
-      }
-
-      // 5 — integrate + damp
-      for (const p of nodes) {
-        if (p.pinned) continue;
-        p.x += p.vx; p.y += p.vy;
-        p.vx *= 0.75; p.vy *= 0.75;
-      }
-    }
-
-    // ── Render ────────────────────────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const ctx = canvas.getContext("2d")!;
-    if (!ctx) return;;
-
-    function render() {
-      ctx.clearRect(0, 0, W, H);
-      ctx.save();
-      ctx.translate(S.ox, S.oy);
-      ctx.scale(S.scale, S.scale);
-
-      // Edges
-      for (const e of SIM_EDGES) {
-        const a = byId[e.s], b = byId[e.t];
-        if (!a || !b) continue;
-        const color = LAYERS[a.layer]?.color ?? "#5a7a9a";
-        drawArrow(ctx, a.x, a.y, b.x, b.y, b.r, color);
-      }
-
-      // Nodes
-      for (const n of nodes) {
-        drawNode(ctx, n, S.selected === n.id, S.hovered === n.id, S.scale);
-      }
-
-      ctx.restore();
-    }
-
-    // ── Pre-run to resolve any initial overlaps before first render ───────────
-    for (let i = 0; i < 60; i++) physics();
-
-    // ── Loop ──────────────────────────────────────────────────────────────────
-    function loop() {
-      physics();
-      render();
-      S.raf = requestAnimationFrame(loop);
-    }
-    S.raf = requestAnimationFrame(loop);
-
-    // ── Mouse helpers ─────────────────────────────────────────────────────────
-    function toWorld(ex: number, ey: number) {
-      return {
-        x: (ex - S.ox) / S.scale,
-        y: (ey - S.oy) / S.scale,
-      };
-    }
-
-    function hitNode(wx: number, wy: number): PNode | null {
-      for (let i = nodes.length - 1; i >= 0; i--) {
-        const n  = nodes[i];
-        const dx = wx - n.x, dy = wy - n.y;
-        if (dx * dx + dy * dy <= (n.r + 4) * (n.r + 4)) return n;
-      }
-      return null;
-    }
-
-    // ── Events ────────────────────────────────────────────────────────────────
-    let panStart: { mx: number; my: number; ox: number; oy: number } | null = null;
-    let dragNode: PNode | null = null;
-
-    function onMouseDown(e: MouseEvent) {
-      const { x, y } = toWorld(e.offsetX, e.offsetY);
-      const hit = hitNode(x, y);
-      if (hit) {
-        dragNode     = hit;
-        hit.pinned   = true;
-        hit.vx = hit.vy = 0;
-      } else {
-        panStart = { mx: e.offsetX, my: e.offsetY, ox: S.ox, oy: S.oy };
-      }
-    }
-
-    function onMouseMove(e: MouseEvent) {
-      const { x, y } = toWorld(e.offsetX, e.offsetY);
-      if (dragNode) {
-        dragNode.x = x; dragNode.y = y;
-        return;
-      }
-      if (panStart) {
-        S.ox = panStart.ox + (e.offsetX - panStart.mx);
-        S.oy = panStart.oy + (e.offsetY - panStart.my);
-        return;
-      }
-      const hit = hitNode(x, y);
-      S.hovered = hit?.id ?? null;
-      if (canvas) canvas.style.cursor = hit ? "pointer" : panStart ? "grabbing" : "grab";
-    }
-
-    function onMouseUp(e: MouseEvent) {
-      if (dragNode && !panStart) {
-        // click vs drag: if barely moved, treat as click
-        const { x, y } = toWorld(e.offsetX, e.offsetY);
-        const dist = Math.hypot(x - dragNode.x, y - dragNode.y);
-        if (dist < 5) {
-          selectNode(S.selected === dragNode.id ? null : dragNode.id);
-          dragNode.pinned = false;
-        }
-      } else if (!dragNode) {
-        const { x, y } = toWorld(e.offsetX, e.offsetY);
-        if (!hitNode(x, y)) selectNode(null);
-      }
-      dragNode  = null;
-      panStart  = null;
-    }
-
-    function onWheel(e: WheelEvent) {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 0.91;
-      const mx = e.offsetX, my = e.offsetY;
-      S.ox = mx - (mx - S.ox) * factor;
-      S.oy = my - (my - S.oy) * factor;
-      S.scale = Math.max(0.15, Math.min(4, S.scale * factor));
-    }
-
-    canvas.addEventListener("mousedown",  onMouseDown);
-    canvas.addEventListener("mousemove",  onMouseMove);
-    canvas.addEventListener("mouseup",    onMouseUp);
-    canvas.addEventListener("wheel",      onWheel, { passive: false });
+    init();
 
     return () => {
-      cancelAnimationFrame(S.raf);
-      canvas.removeEventListener("mousedown",  onMouseDown);
-      canvas.removeEventListener("mousemove",  onMouseMove);
-      canvas.removeEventListener("mouseup",    onMouseUp);
-      canvas.removeEventListener("wheel",      onWheel);
+      destroyed = true;
+      if (graphRef.current) {
+        try { (graphRef.current as { destroy(): void }).destroy(); } catch {}
+        graphRef.current = null;
+      }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectNode]);
+  }, []);
+
+  const accent = selNode ? (LAYERS[selNode.layer]?.color ?? "#5a7a9a") : "#06b6d4";
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "var(--bg-void)", borderRadius: "var(--r-lg)", border: "1px solid var(--border)", overflow: "hidden" }}>
-
-      <canvas
-        ref={canvasRef}
-        style={{ display: "block", width: "100%", height: "100%", cursor: "grab" }}
+    <div
+      style={{
+        position:     "relative",
+        width:        "100%",
+        height:       "100%",
+        overflow:     "hidden",
+        borderRadius: "var(--r-lg)",
+        background:   "#020812",
+        border:       "1px solid rgba(6,182,212,0.12)",
+        boxShadow:    "0 0 40px rgba(6,182,212,0.04), inset 0 0 80px rgba(6,182,212,0.02)",
+      }}
+    >
+      {/* Grid de fundo */}
+      <div
+        aria-hidden
+        style={{
+          position:        "absolute",
+          inset:           0,
+          backgroundImage: `
+            linear-gradient(rgba(6,182,212,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(6,182,212,0.04) 1px, transparent 1px)
+          `,
+          backgroundSize:  "48px 48px",
+          pointerEvents:   "none",
+          zIndex:          0,
+        }}
       />
+
+      {/* Scanlines */}
+      <div
+        aria-hidden
+        style={{
+          position:        "absolute",
+          inset:           0,
+          backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px)",
+          pointerEvents:   "none",
+          zIndex:          1,
+        }}
+      />
+
+      {/* Glow central */}
+      <div
+        aria-hidden
+        style={{
+          position:      "absolute",
+          top:           "50%",
+          left:          "50%",
+          transform:     "translate(-50%, -50%)",
+          width:         "60%",
+          height:        "60%",
+          background:    "radial-gradient(ellipse, rgba(6,182,212,0.04) 0%, transparent 70%)",
+          pointerEvents: "none",
+          zIndex:        0,
+        }}
+      />
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", zIndex: 20, background: "#020812" }}>
+          <div style={{ width: 32, height: 32, border: "2px solid #0d1f35", borderTopColor: "#06b6d4", borderRadius: "50%", animation: "spin-slow 0.7s linear infinite" }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "#06b6d4", letterSpacing: "0.14em", textTransform: "uppercase", textShadow: "0 0 12px rgba(6,182,212,0.5)" }}>
+            Calculando grafo...
+          </span>
+        </div>
+      )}
+
+      {/* G6 container */}
+      <div ref={containerRef} style={{ position: "absolute", inset: 0, zIndex: 2 }} />
 
       {/* Selected node panel */}
       {selNode && (
         <div style={{
-          position:     "absolute",
-          top:          "1rem",
-          right:        "1rem",
-          width:        272,
-          background:   "rgba(10,22,40,0.97)",
-          border:       `1px solid ${LAYERS[selNode.layer]?.color ?? "#5a7a9a"}40`,
-          borderLeft:   `3px solid ${LAYERS[selNode.layer]?.color ?? "#5a7a9a"}`,
-          borderRadius: "var(--r-lg)",
-          padding:      "1rem 1.15rem",
-          zIndex:       20,
-          backdropFilter: "blur(10px)",
+          position:       "absolute",
+          top:            "1rem",
+          right:          "1rem",
+          width:          272,
+          background:     "rgba(2,6,23,0.97)",
+          border:         `1px solid ${accent}30`,
+          borderLeft:     `3px solid ${accent}`,
+          borderRadius:   "var(--r-lg)",
+          padding:        "1rem 1.15rem",
+          zIndex:         20,
+          backdropFilter: "blur(12px)",
+          boxShadow:      `-6px 0 24px ${accent}10`,
+          animation:      "fade-left 0.2s cubic-bezier(.16,1,.3,1) both",
         }}>
+          {/* Header */}
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", minWidth: 0, flex: 1 }}>
-              <FileCode size={12} color={LAYERS[selNode.layer]?.color} style={{ flexShrink: 0 }} />
+              <FileCode size={12} color={accent} style={{ flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {selNode.label.split("/").pop()}
@@ -636,15 +481,30 @@ export function DepsGraphClient() {
                 </div>
               </div>
             </div>
-            <button onClick={() => selectNode(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--dim)", padding: 2, flexShrink: 0 }}>
+            <button
+              onClick={() => setSelNode(null)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--dim)", padding: 2, flexShrink: 0 }}
+            >
               <X size={12} />
             </button>
           </div>
 
-          <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: LAYERS[selNode.layer]?.color, background: `${LAYERS[selNode.layer]?.color}14`, border: `1px solid ${LAYERS[selNode.layer]?.color}28`, borderRadius: "3px", padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          {/* Layer badge */}
+          <span style={{
+            fontFamily:    "var(--mono)",
+            fontSize:      "0.62rem",
+            color:         accent,
+            background:    `${accent}14`,
+            border:        `1px solid ${accent}28`,
+            borderRadius:  "3px",
+            padding:       "1px 7px",
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+          }}>
             {LAYERS[selNode.layer]?.label}
           </span>
 
+          {/* Imports to */}
           {selNode.importsTo.length > 0 && (
             <div style={{ marginTop: "0.85rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: "0.35rem" }}>
@@ -654,13 +514,17 @@ export function DepsGraphClient() {
                 </span>
               </div>
               {selNode.importsTo.map((f) => (
-                <div key={f} style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div
+                  key={f}
+                  style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
                   {f.split("/").pop()}
                 </div>
               ))}
             </div>
           )}
 
+          {/* Imported by */}
           {selNode.importedBy.length > 0 && (
             <div style={{ marginTop: "0.75rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: "0.35rem" }}>
@@ -670,7 +534,10 @@ export function DepsGraphClient() {
                 </span>
               </div>
               {selNode.importedBy.map((f) => (
-                <div key={f} style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div
+                  key={f}
+                  style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: "var(--muted-foreground)", padding: "1px 6px", background: "var(--bg-panel)", borderRadius: 3, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
                   {f.split("/").pop()}
                 </div>
               ))}
