@@ -321,6 +321,95 @@ function buildG6Data(): any {
   return { nodes, edges };
 }
 
+// ─── Simulação física própria ─────────────────────────────────────────────────
+interface PhysNode {
+  id:  string;
+  x:   number;
+  y:   number;
+  vx:  number;
+  vy:  number;
+  r:   number;   // raio de colisão
+  pinned: boolean;
+}
+
+function runPhysics(
+  phys:   PhysNode[],
+  edges:  { source: string; target: string }[],
+  cx:     number,
+  cy:     number,
+  alpha:  number,
+) {
+  const n = phys.length;
+
+  // 1. Força central (gravidade): puxa cada nó para o centro
+  const GRAVITY = 0.06 * alpha;
+  for (const p of phys) {
+    if (p.pinned) continue;
+    p.vx += (cx - p.x) * GRAVITY;
+    p.vy += (cy - p.y) * GRAVITY;
+  }
+
+  // 2. Força de repulsão (n-body): todos empurram todos
+  const REPEL = 9000 * alpha;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx   = phys[j].x - phys[i].x || 0.01;
+      const dy   = phys[j].y - phys[i].y || 0.01;
+      const dist2 = dx * dx + dy * dy;
+      const dist  = Math.sqrt(dist2);
+      const force = REPEL / dist2;
+      const fx    = (dx / dist) * force;
+      const fy    = (dy / dist) * force;
+      if (!phys[i].pinned) { phys[i].vx -= fx; phys[i].vy -= fy; }
+      if (!phys[j].pinned) { phys[j].vx += fx; phys[j].vy += fy; }
+    }
+  }
+
+  // 3. Força de link (elástico): conectados se atraem ao comprimento ideal
+  const LINK_DIST   = 115;
+  const LINK_STRENGTH = 0.45 * alpha;
+  const nodeById = Object.fromEntries(phys.map((p) => [p.id, p]));
+  for (const e of edges) {
+    const a = nodeById[e.source];
+    const b = nodeById[e.target];
+    if (!a || !b) continue;
+    const dx   = b.x - a.x || 0.01;
+    const dy   = b.y - a.y || 0.01;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const stretch = (dist - LINK_DIST) / dist * LINK_STRENGTH;
+    if (!a.pinned) { a.vx += dx * stretch; a.vy += dy * stretch; }
+    if (!b.pinned) { b.vx -= dx * stretch; b.vy -= dy * stretch; }
+  }
+
+  // 4. Colisão: impede sobreposição (resolve overlap diretamente)
+  const COLLIDE_STRENGTH = 0.7;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx      = phys[j].x - phys[i].x || 0.01;
+      const dy      = phys[j].y - phys[i].y || 0.01;
+      const dist    = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const minDist = phys[i].r + phys[j].r + 6;
+      if (dist < minDist) {
+        const overlap = (minDist - dist) / dist * COLLIDE_STRENGTH;
+        const fx = dx * overlap * 0.5;
+        const fy = dy * overlap * 0.5;
+        if (!phys[i].pinned) { phys[i].vx -= fx; phys[i].vy -= fy; }
+        if (!phys[j].pinned) { phys[j].vx += fx; phys[j].vy += fy; }
+      }
+    }
+  }
+
+  // 5. Integrar velocidade + amortecimento
+  const DAMPING = 0.72;
+  for (const p of phys) {
+    if (p.pinned) continue;
+    p.x  += p.vx;
+    p.y  += p.vy;
+    p.vx *= DAMPING;
+    p.vy *= DAMPING;
+  }
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function DepsGraphClient() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -329,7 +418,8 @@ export function DepsGraphClient() {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    let destroyed = false;
+    let destroyed  = false;
+    let rafId      = 0;
 
     const init = async () => {
       try {
@@ -339,6 +429,38 @@ export function DepsGraphClient() {
         const el     = containerRef.current!;
         const width  = el.clientWidth  || 1000;
         const height = el.clientHeight || 700;
+        const cx     = width  / 2;
+        const cy     = height / 2;
+
+        // ── Pré-calcular graus para raio de colisão ──────────────
+        const degrees = getDegreeMap();
+        const maxDeg  = Math.max(...Object.values(degrees), 1);
+
+        // ── Posições iniciais em círculo ──────────────────────────
+        const allNodes = SIM_NODES;
+        const phys: PhysNode[] = allNodes.map((n, i) => {
+          const angle  = (2 * Math.PI * i) / allNodes.length;
+          const radius = 260;
+          const deg    = degrees[n.id] ?? 0;
+          const size   = 8 + ((deg / maxDeg) * 22);
+          return {
+            id:     n.id,
+            x:      cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 20,
+            y:      cy + Math.sin(angle) * radius + (Math.random() - 0.5) * 20,
+            vx:     0,
+            vy:     0,
+            r:      size + 4,
+            pinned: false,
+          };
+        });
+        const physById = Object.fromEntries(phys.map((p) => [p.id, p]));
+
+        // ── Montar dados G6 com posições iniciais ─────────────────
+        const g6data = buildG6Data();
+        g6data.nodes = g6data.nodes.map((n: { id: string; style: Record<string, unknown>; data: Record<string, unknown> }) => ({
+          ...n,
+          style: { ...n.style, x: physById[n.id]?.x ?? cx, y: physById[n.id]?.y ?? cy },
+        }));
 
         const graph = new Graph({
           container: el,
@@ -347,36 +469,8 @@ export function DepsGraphClient() {
           autoResize:  true,
           autoFit:     "center",
           background:  "transparent",
-          data:        buildG6Data(),
-
-          layout: {
-            type: "force",
-
-            // ── Força central: puxa tudo para o centro ──────────
-            // Maior = mais compacto. 0.05–0.2 é o range útil.
-            center:         [width / 2, height / 2],
-            gravity:        0.08,
-
-            // ── Força de repulsão: empurra nós uns dos outros ───
-            // Negativo = repulsão. Mais negativo = mais espaçado.
-            // Com ~60 nós, -600 a -900 evita sobreposição.
-            nodeStrength:   -700,
-
-            // ── Link force + distância: elástico entre conectados
-            // edgeStrength: quão forte puxa (0–1)
-            // linkDistance: comprimento ideal do "elástico" em px
-            edgeStrength:   0.5,
-            linkDistance:   110,
-
-            // ── Colisão: raio físico para evitar sobreposição ───
-            collideStrength: 1,
-            nodeSize:        50,   // raio de colisão por nó
-            preventOverlap:  true,
-
-            // ── Simulação: decai devagar → mais tempo para estabilizar
-            alphaDecay:  0.015,
-            alphaMin:    0.001,
-          },
+          data:        g6data,
+          layout:      { type: "preset" },   // usa as posições que passamos
 
           node: {
             type:  "circle",
@@ -386,7 +480,6 @@ export function DepsGraphClient() {
               inactive: { opacity: 0.12, shadowBlur: 0 },
             },
           },
-
           edge: {
             type:  "line",
             state: {
@@ -395,11 +488,24 @@ export function DepsGraphClient() {
               inactive: { opacity: 0.04 },
             },
           },
-
           behaviors: [
             "drag-canvas",
             { type: "zoom-canvas", sensitivity: 0.5 },
-            "drag-element",
+            {
+              type:     "drag-element",
+              onFinish: (ids: string[]) => {
+                // Pin o nó após drag manual para não ser movido pela simulação
+                ids.forEach((id) => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const nd = (graph as any).getNodeData?.(id);
+                  if (nd && physById[id]) {
+                    physById[id].x = nd.style?.x ?? physById[id].x;
+                    physById[id].y = nd.style?.y ?? physById[id].y;
+                    physById[id].pinned = true;
+                  }
+                });
+              },
+            },
             { type: "hover-activate", degree: 1 },
             "click-select",
           ],
@@ -409,19 +515,36 @@ export function DepsGraphClient() {
         await graph.render();
         setLoading(false);
 
-        // Animate edges
-        graph.getEdgeData().forEach((edge: unknown) => {
+        // ── Loop de simulação física ──────────────────────────────
+        let tick  = 0;
+        const MAX_TICKS   = 400;
+        const ALPHA_START = 1.0;
+        const ALPHA_DECAY = 0.018;
+
+        const simLoop = async () => {
+          if (destroyed) return;
+          if (tick >= MAX_TICKS) return;
+
+          const alpha = ALPHA_START * Math.pow(1 - ALPHA_DECAY, tick);
+          tick++;
+
+          runPhysics(phys, SIM_EDGES, cx, cy, alpha);
+
+          // Atualizar posições no G6
+          const updates = phys
+            .filter((p) => !p.pinned)
+            .map((p) => ({ id: p.id, style: { x: p.x, y: p.y } }));
+
           try {
-            const id = (edge as { id: string }).id;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const el = (graph as any).context?.element?.getElement?.(id);
-            const key = el?.getShape?.("key") ?? el?.children?.[0];
-            key?.animate?.(
-              [{ lineDashOffset: 18 }, { lineDashOffset: 0 }],
-              { duration: 4000, iterations: Infinity, easing: "linear" },
-            );
+            await (graph as any).updateNodeData(updates);
+            await graph.draw();
           } catch {}
-        });
+
+          rafId = requestAnimationFrame(simLoop);
+        };
+
+        rafId = requestAnimationFrame(simLoop);
 
         // Click handler
         graph.on("node:click", (evt: unknown) => {
@@ -454,7 +577,10 @@ export function DepsGraphClient() {
     };
 
     init();
-    return () => { destroyed = true; };
+    return () => {
+      destroyed = true;
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   return (
