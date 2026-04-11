@@ -206,13 +206,13 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
           </div>
         )}
 
-        {/* Usado por (tech → repos) */}
+        {/* Afinidade com outros repos */}
         {node.usedBy.length > 0 && (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
               <GitBranch size={11} color="#a78bfa" />
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                usado por ({node.usedBy.length})
+                afinidade com ({node.usedBy.length})
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -229,6 +229,48 @@ function NodeSidebar({ node, onClose }: { node: SelNode; onClose: () => void }) 
   );
 }
 
+// ─── Derive repo→repo edges from shared technologies ─────────────────────────
+// Techs used by more than MAX_REPOS are too universal (e.g. TypeScript/Git)
+// and would create an unreadable hairball — skip them.
+const MAX_TECH_REPOS = 10;
+// Explicitly skip language-level ubiquitous techs
+const SKIP_TECHS = new Set([
+  "TypeScript", "JavaScript", "Node.js", "Git", "GitHub Actions", "HTML", "CSS",
+]);
+
+interface SharedEdge {
+  source: string; target: string;
+  techLabel: string; cat: string; color: string;
+}
+
+function deriveSharedEdges(nodes: APIGraphNode[], edges: APIGraphEdge[]): SharedEdge[] {
+  // 1. tech → list of repos that use it
+  const techToRepos = new Map<string, string[]>();
+  for (const e of edges) {
+    if (e.type !== "uses_technology") continue;
+    const arr = techToRepos.get(e.target) ?? [];
+    arr.push(e.source);
+    techToRepos.set(e.target, arr);
+  }
+
+  const result: SharedEdge[] = [];
+  for (const [techId, repos] of techToRepos) {
+    if (repos.length < 2 || repos.length > MAX_TECH_REPOS) continue;
+    const techNode = nodes.find((n) => n.id === techId);
+    if (!techNode || SKIP_TECHS.has(techNode.label)) continue;
+
+    const cat   = getCat(techNode);
+    const color = CATS[cat]?.color ?? "#5a7a9a";
+
+    for (let i = 0; i < repos.length; i++) {
+      for (let j = i + 1; j < repos.length; j++) {
+        result.push({ source: repos[i], target: repos[j], techLabel: techNode.label, cat, color });
+      }
+    }
+  }
+  return result;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges: APIGraphEdge[] }) {
   const containerRef                    = useRef<HTMLDivElement>(null);
@@ -236,6 +278,9 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
   const [loading,      setLoading]      = useState(true);
   const [ready,        setReady]        = useState(false);
   const [selNode,      setSelNode]      = useState<SelNode | null>(null);
+
+  // Pre-compute derived edges (stable across renders)
+  const sharedEdges = deriveSharedEdges(nodes, edges);
 
   const zoomIn  = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -265,84 +310,105 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
         const width  = el.clientWidth  || 900;
         const height = el.clientHeight || 600;
 
-        // ── Degree map ────────────────────────────────────────────────────────
+        // ── Degree map (usando arestas derivadas para sizing dos repos) ────────
+        const repoNodes = nodes.filter((n) => n.type === "repo");
         const deg: Record<string, number> = {};
-        nodes.forEach((n) => { deg[n.id] = 0; });
-        edges.forEach((e) => {
+        repoNodes.forEach((n) => { deg[n.id] = 0; });
+        sharedEdges.forEach((e) => {
           deg[e.source] = (deg[e.source] ?? 0) + 1;
           deg[e.target] = (deg[e.target] ?? 0) + 1;
         });
         const maxDeg = Math.max(...Object.values(deg), 1);
 
-        // ── Build G6 nodes ────────────────────────────────────────────────────
-        const gNodes = nodes.map((n) => {
-          const cat    = getCat(n);
-          const color  = CATS[cat]?.color ?? "#5a7a9a";
-          const isRepo = n.type === "repo";
-          const d      = deg[n.id] ?? 0;
-          const size   = isRepo ? 28 + (d / maxDeg) * 24 : 18 + (d / maxDeg) * 18;
-          const name   = n.label.includes("/") ? n.label.split("/")[1] : n.label;
-          const short  = name.length > 20 ? name.slice(0, 19) + "…" : name;
-          const isHub  = d >= 5 || isRepo;
-          const icon   = isRepo ? "⬡" : (name.slice(0, 2).toUpperCase());
+        // ── Build G6 nodes (somente repos) ────────────────────────────────────
+        const gNodes = repoNodes.map((n) => {
+          const cat   = getCat(n);
+          const color = CATS[cat]?.color ?? "#5a7a9a";
+          const d     = deg[n.id] ?? 0;
+          const size  = 26 + (d / maxDeg) * 28;
+          const name  = n.label.includes("/") ? n.label.split("/")[1] : n.label;
+          const short = name.length > 20 ? name.slice(0, 19) + "…" : name;
 
           return {
             id:    n.id,
             style: {
               size,
-              fill:             isRepo ? `${color}0d` : `${color}14`,
+              fill:             `${color}0d`,
               stroke:           color,
-              lineWidth:        isRepo ? 2.5 : 1.5,
+              lineWidth:        2.5,
               shadowColor:      color,
-              shadowBlur:       isRepo ? 20 : isHub ? 14 : 8,
-              label:            isHub,
+              shadowBlur:       20,
+              label:            true,
               labelText:        short,
-              labelFill:        isRepo ? color : "#94a3b8",
+              labelFill:        color,
               labelFontFamily:  "'Fira Code', monospace",
-              labelFontSize:    isRepo ? 11 : 9,
-              labelMaxWidth:    150,
+              labelFontSize:    11,
+              labelMaxWidth:    160,
               labelOffsetY:     6,
               labelWordWrap:    false,
               labelBackground:        true,
               labelBackgroundFill:    "rgba(2,6,23,0.85)",
               labelBackgroundRadius:  3,
               labelBackgroundPadding: [2, 7, 2, 7] as [number,number,number,number],
-              iconText:        icon,
+              iconText:        "⬡",
               iconFill:        color,
-              iconFontSize:    isRepo ? 13 : 9,
+              iconFontSize:    13,
               iconFontFamily:  "'Fira Code', monospace",
             },
             data: { cat, originalLabel: n.label, nodeType: n.type },
           };
         });
 
-        // ── Build G6 edges ────────────────────────────────────────────────────
-        const gEdges = edges.map((e, i) => {
-          const src   = nodes.find((n) => n.id === e.source);
-          const cat   = src ? getCat(src) : "fullstack";
-          const color = CATS[cat]?.color ?? "#5a7a9a";
-          return {
-            id:     `edge-${i}`,
-            source: e.source,
-            target: e.target,
-            style:  { stroke: `${color}40`, lineWidth: 1, opacity: 0.7, lineDash: [6, 5], shadowColor: color, shadowBlur: 3, endArrow: false },
-          };
-        });
+        // ── Build G6 edges — paralelas por afinidade de tech ─────────────────
+        // Agrupar por par de repos para distribuir offsets simétricos
+        const pairMap = new Map<string, SharedEdge[]>();
+        for (const se of sharedEdges) {
+          const key = [se.source, se.target].sort().join("||");
+          const arr = pairMap.get(key) ?? [];
+          arr.push(se);
+          pairMap.set(key, arr);
+        }
+
+        const gEdges: unknown[] = [];
+        let edgeIdx = 0;
+        for (const arr of pairMap.values()) {
+          const capped = arr.slice(0, 8); // máximo 8 linhas paralelas por par
+          const nc     = capped.length;
+          capped.forEach((se, idx) => {
+            const offset = nc === 1 ? 0 : (idx - (nc - 1) / 2) * 28;
+            gEdges.push({
+              id:     `shared-${edgeIdx++}`,
+              source: se.source,
+              target: se.target,
+              data:   { techLabel: se.techLabel, cat: se.cat },
+              style:  {
+                stroke:      `${se.color}70`,
+                lineWidth:   1.5,
+                opacity:     0.75,
+                curveOffset: offset,
+                lineDash:    [4, 5],
+                shadowColor: se.color,
+                shadowBlur:  5,
+                endArrow:    false,
+              },
+            });
+          });
+        }
 
         const graph = new Graph({
           container: el, width, height,
           autoResize: true, autoFit: "center", background: "transparent",
-          data: { nodes: gNodes, edges: gEdges },
+          data: { nodes: gNodes, edges: gEdges as never[] },
 
           layout: {
-            type:                       "radial",
-            nodeSize:                   50,
-            unitRadius:                 155,
-            linkDistance:               300,
-            preventOverlap:             true,
-            maxPreventOverlapIteration: 200,
-            sortBy:                     "cat",
-            sortStrength:               45,
+            type:           "force",
+            linkDistance:   180,
+            nodeStrength:   -600,
+            edgeStrength:   0.6,
+            preventOverlap: true,
+            nodeSize:       60,
+            alphaDecay:     0.025,
+            velocityDecay:  0.4,
           },
 
           node: {
@@ -350,16 +416,16 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
             state: {
               active:   { label: true, lineWidth: 3,   shadowBlur: 28, zIndex: 100 },
               selected: { label: true, lineWidth: 3,   shadowBlur: 32, stroke: "#fbbf24", shadowColor: "#fbbf24", zIndex: 100 },
-              inactive: { opacity: 0.18, shadowBlur: 0 },
+              inactive: { opacity: 0.2, shadowBlur: 0 },
             },
           },
 
           edge: {
             type:  "quadratic",
             state: {
-              active:   { opacity: 0.9, lineWidth: 1.5, shadowBlur: 6 },
-              selected: { opacity: 1,   lineWidth: 2,   shadowBlur: 8 },
-              inactive: { opacity: 0.06 },
+              active:   { opacity: 0.95, lineWidth: 2,   shadowBlur: 8 },
+              selected: { opacity: 1,    lineWidth: 2.5, shadowBlur: 10 },
+              inactive: { opacity: 0.08 },
             },
           },
 
@@ -382,7 +448,7 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const el  = (graph as any).context?.element?.getElement?.(id);
             const key = el?.getShape?.("key") ?? el?.children?.[0];
-            key?.animate?.([{ lineDashOffset: 22 }, { lineDashOffset: 0 }], { duration: 5000, iterations: Infinity, easing: "linear" });
+            key?.animate?.([{ lineDashOffset: 22 }, { lineDashOffset: 0 }], { duration: 4000, iterations: Infinity, easing: "linear" });
           } catch {}
         });
 
@@ -394,18 +460,27 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
           if (!nodeId) return;
           const node = nodes.find((n) => n.id === nodeId);
           if (!node) return;
-          const isRepo = node.type === "repo";
-          // Repos → what techs they USE (outgoing edges to tech nodes)
-          // Techs → which repos USE THEM (incoming edges from repo nodes)
-          const uses   = isRepo
-            ? edges.filter((ed) => ed.source === nodeId).map((ed) => nodes.find((n) => n.id === ed.target)?.label ?? ed.target)
-            : [];
-          const usedBy = !isRepo
-            ? edges.filter((ed) => ed.target === nodeId).map((ed) => {
-                const src = nodes.find((n) => n.id === ed.source);
-                return src?.label.includes("/") ? src.label.split("/")[1] : src?.label ?? ed.source;
-              })
-            : [];
+
+          // Techs usadas por este repo (via edges originais)
+          const uses = edges
+            .filter((ed) => ed.source === nodeId && ed.type === "uses_technology")
+            .map((ed) => nodes.find((n) => n.id === ed.target)?.label ?? ed.target);
+
+          // Repos que compartilham techs com este repo (via derived edges)
+          const usedBy = sharedEdges
+            .filter((se) => se.source === nodeId || se.target === nodeId)
+            .reduce((acc, se) => {
+              const peer = se.source === nodeId ? se.target : se.source;
+              const peerNode = nodes.find((n) => n.id === peer);
+              const peerName = peerNode?.label.includes("/") ? peerNode.label.split("/")[1] : (peerNode?.label ?? peer);
+              const entry = acc.find((a) => a.id === peer);
+              if (entry) { entry.techs.push(se.techLabel); }
+              else { acc.push({ id: peer, name: peerName, techs: [se.techLabel] }); }
+              return acc;
+            }, [] as { id: string; name: string; techs: string[] }[])
+            .sort((a, b) => b.techs.length - a.techs.length)
+            .slice(0, 8)
+            .map(({ name, techs }) => `${name} (${techs.join(", ")})`);
 
           setSelNode({
             nodeType:  node.type,
@@ -443,10 +518,14 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
         graphRef.current = null;
       }
     };
-  }, [nodes, edges]);
+  }, [nodes, edges, sharedEdges]);
 
-  const repoCount = nodes.filter((n) => n.type === "repo").length;
-  const techCount = nodes.filter((n) => n.type === "technology").length;
+  const repoCount  = nodes.filter((n) => n.type === "repo").length;
+  const techCount  = nodes.filter((n) => n.type === "technology").length;
+  // Unique pairs that share at least 1 non-trivial tech
+  const pairCount  = new Set(
+    sharedEdges.map((se) => [se.source, se.target].sort().join("||"))
+  ).size;
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", borderRadius: "var(--r-lg)", background: "#020812", border: "1px solid rgba(6,182,212,0.12)", boxShadow: "0 0 40px rgba(6,182,212,0.04), inset 0 0 80px rgba(6,182,212,0.02)" }}>
@@ -500,9 +579,10 @@ export function DepsGraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges
       {ready && (
         <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: "0.5rem", zIndex: 20 }}>
           {[
-            { label: `${repoCount} repos`,       color: "#06b6d4" },
-            { label: `${techCount} tecnologias`, color: "#a78bfa" },
-            { label: `${edges.length} conexões`, color: "#22c55e" },
+            { label: `${repoCount} repos`,            color: "#06b6d4" },
+            { label: `${techCount} tecnologias`,      color: "#a78bfa" },
+            { label: `${pairCount} pares conectados`, color: "#22c55e" },
+            { label: `${sharedEdges.length} afinidades`, color: "#fbbf24" },
           ].map(({ label, color }) => (
             <span key={label} style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color, background: `${color}11`, border: `1px solid ${color}33`, borderRadius: "var(--r)", padding: "0.2rem 0.65rem", letterSpacing: "0.06em" }}>{label}</span>
           ))}
