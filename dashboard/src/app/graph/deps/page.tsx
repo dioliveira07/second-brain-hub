@@ -1,8 +1,24 @@
-import { DepsGraphClient } from "@/components/DepsGraphClient";
+import { hubFetch } from "@/lib/hub";
+import { DepsGraphClient, type APIGraphNode, type APIGraphEdge } from "@/components/DepsGraphClient";
 import { FadeIn } from "@/components/reactbits/FadeIn";
-import { GitBranch, Zap, Info } from "lucide-react";
+import { GitBranch, Info } from "lucide-react";
 
-export default function DepsGraphPage() {
+export default async function DepsGraphPage() {
+  let nodes: APIGraphNode[] = [];
+  let edges: APIGraphEdge[] = [];
+
+  try {
+    const [nodesRes, edgesRes] = await Promise.all([
+      hubFetch<{ nodes: APIGraphNode[]; total: number }>("/graph/nodes", { revalidate: 60 }),
+      hubFetch<{ edges: APIGraphEdge[]; total: number }>("/graph/edges", { revalidate: 60 }),
+    ]);
+    nodes = nodesRes.nodes;
+    edges = edgesRes.edges;
+  } catch {}
+
+  const repoCount  = nodes.filter((n) => n.type === "repo").length;
+  const techCount  = nodes.filter((n) => n.type === "technology").length;
+
   return (
     <FadeIn from="bottom" duration={500}>
       <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", height: "calc(100vh - 4rem)" }}>
@@ -13,31 +29,20 @@ export default function DepsGraphPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
               <GitBranch size={13} color="var(--cyan)" />
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--cyan)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-                Simulação — Grafo de Dependências
+                Grafo de Dependências
               </span>
             </div>
             <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", margin: 0 }}>
               Repository Dependency Graph
             </h2>
             <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)", margin: "0.3rem 0 0" }}>
-              Dependências inter-repositório — <span style={{ color: "var(--cyan)" }}>29 repos indexados</span>
+              Dependências inter-repositório —{" "}
+              <span style={{ color: "var(--cyan)" }}>{repoCount} repos indexados</span>
+              {" · "}
+              <span style={{ color: "var(--purple)" }}>{techCount} tecnologias</span>
+              {" · "}
+              <span style={{ color: "var(--green)" }}>{edges.length} conexões</span>
             </p>
-          </div>
-
-          <div style={{
-            display:      "flex",
-            alignItems:   "center",
-            gap:          "0.5rem",
-            background:   "rgba(251,191,36,0.06)",
-            border:       "1px solid rgba(251,191,36,0.2)",
-            borderRadius: "var(--r)",
-            padding:      "0.5rem 0.85rem",
-            flexShrink:   0,
-          }}>
-            <Zap size={11} color="#fbbf24" />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "#fbbf24" }}>
-              simulação — dados reais em breve
-            </span>
           </div>
         </div>
 
@@ -58,11 +63,13 @@ export default function DepsGraphPage() {
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--dim)" }}>camadas:</span>
           </div>
           {[
-            { label: "Full-stack",  color: "#a78bfa" },
-            { label: "Backend",     color: "#f87171" },
-            { label: "Frontend",    color: "#06b6d4" },
-            { label: "Tooling",     color: "#fbbf24" },
-            { label: "Infra / Ops", color: "#fb923c" },
+            { label: "Full-stack",      color: "#a78bfa" },
+            { label: "Backend",         color: "#f87171" },
+            { label: "Frontend",        color: "#06b6d4" },
+            { label: "Data / Storage",  color: "#fbbf24" },
+            { label: "Infra / Ops",     color: "#fb923c" },
+            { label: "Tooling",         color: "#34d399" },
+            { label: "Tecnologia",      color: "#22c55e" },
           ].map(({ label, color }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}`, display: "inline-block" }} />
@@ -76,7 +83,7 @@ export default function DepsGraphPage() {
 
         {/* Graph canvas */}
         <div style={{ flex: 1, minHeight: 0 }}>
-          <DepsGraphClient />
+          <DepsGraphClient nodes={nodes} edges={edges} />
         </div>
       </div>
     </FadeIn>
