@@ -671,24 +671,37 @@ function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-        {conflitos.slice(0, 5).map((c, i) => (
-          <div key={i} style={{ padding: "0.55rem 1rem", borderBottom: i < conflitos.length - 1 ? `1px solid rgba(239,68,68,0.08)` : "none", display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-            <FileCode size={11} color={C.red} style={{ flexShrink: 0 }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {c.arquivo.split("/").slice(-2).join("/")}
-            </span>
-            <div style={{ display: "flex", gap: "0.3rem" }}>
-              {c.devs.map(dev => (
-                <span key={dev} style={{ background: `${devColor(dev)}15`, border: `1px solid ${devColor(dev)}33`, color: devColor(dev), borderRadius: 4, padding: "0px 5px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>
-                  {dev}
+        {conflitos.slice(0, 5).map((c, i) => {
+          const minAtras = Math.round((Date.now() - new Date(c.ultima_edicao).getTime()) / 60000);
+          const tempoLabel = minAtras < 60
+            ? `${minAtras}min atrás`
+            : `${Math.round(minAtras / 60)}h atrás`;
+          return (
+            <div key={i} style={{ padding: "0.6rem 1rem", borderBottom: i < conflitos.length - 1 ? `1px solid rgba(239,68,68,0.08)` : "none", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+              {/* linha 1: projeto + arquivo + tempo */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <FileCode size={11} color={C.red} style={{ flexShrink: 0 }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.text, flex: 1, minWidth: 0, wordBreak: "break-all" }}>
+                  {c.arquivo}
                 </span>
-              ))}
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, flexShrink: 0 }}>
+                  {tempoLabel}
+                </span>
+              </div>
+              {/* linha 2: projeto + devs */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", paddingLeft: "1.1rem", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4, padding: "0px 5px" }}>
+                  {c.projeto.split("/").pop()}
+                </span>
+                {c.devs.map(dev => (
+                  <span key={dev} style={{ background: `${devColor(dev)}15`, border: `1px solid ${devColor(dev)}33`, color: devColor(dev), borderRadius: 4, padding: "0px 5px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>
+                    {dev}
+                  </span>
+                ))}
+              </div>
             </div>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim, flexShrink: 0 }}>
-              {c.projeto.split("/").pop()}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
