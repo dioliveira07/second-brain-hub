@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Network, FolderGit2,
-  BookOpen, GitCommitHorizontal, Activity, Brain, Newspaper,
+  BookOpen, GitCommitHorizontal, Activity, Brain, Newspaper, FileCode2,
 } from "lucide-react";
 import { GlitchText } from "@/components/reactbits/GlitchText";
 
@@ -15,6 +15,7 @@ const NAV = [
   { href: "/timeline", label: "Timeline",     Icon: GitCommitHorizontal },
   { href: "/activity", label: "Atividade",    Icon: Activity        },
   { href: "/cerebro",  label: "Cérebro",      Icon: Brain           },
+  { href: "/edits",    label: "Edições",      Icon: FileCode2       },
   { href: "/digest",   label: "Digest",       Icon: Newspaper       },
   { href: "/projeto",  label: "Projeto",      Icon: GitCommitHorizontal },
 ];

@@ -2,6 +2,7 @@ import { hubFetch } from "@/lib/hub";
 import { FadeIn }   from "@/components/reactbits/FadeIn";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
 import { FileTree, type TreeNode } from "@/components/FileTree";
+import { MarkdownSummary } from "@/components/MarkdownSummary";
 import {
   GitBranch, Clock, Layers, Code2, Server,
   GitMerge, AlertTriangle, User, Calendar, CheckCircle2, FolderTree,
@@ -174,20 +175,7 @@ export default async function RepoDetailPage({ params }: PageParams) {
             <GitBranch size={13} color="var(--cyan)" />
             <span className="label-accent">Resumo Arquitetural</span>
           </div>
-          <pre
-            style={{
-              fontFamily:   "var(--mono)",
-              fontSize:     "0.78rem",
-              lineHeight:   1.75,
-              color:        "var(--text)",
-              whiteSpace:   "pre-wrap",
-              wordBreak:    "break-word",
-              margin:       0,
-              opacity:      0.88,
-            }}
-          >
-            {detail.summary || "Sem resumo disponível."}
-          </pre>
+          <MarkdownSummary content={detail.summary || "Sem resumo disponível."} />
         </div>
       </FadeIn>
 

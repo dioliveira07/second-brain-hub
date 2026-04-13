@@ -71,5 +71,7 @@ export async function GET(req: NextRequest) {
     size:     data.size,
     html,
     lines:    data.content.split("\n").length,
+    // raw content returned for markdown files so the client can render it
+    ...(data.language === "markdown" ? { content: data.content } : {}),
   });
 }

@@ -257,7 +257,7 @@ class SSHIdentityPayload(BaseModel):
 @router.post("/ssh/identity")
 async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = Depends(get_db)):
     """Salva (upsert) identidade dev para esta sessão SSH."""
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=45)
 
     result = await db.execute(
         select(SSHIdentity).where(

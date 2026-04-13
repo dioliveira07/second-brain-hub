@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { FileTree, type TreeNode } from "@/components/FileTree";
+import { MarkdownSummary } from "@/components/MarkdownSummary";
 import {
   X, Loader2, FileX, ChevronLeft, ChevronRight,
-  PanelLeftClose, PanelLeftOpen, Copy, Check,
+  PanelLeftClose, PanelLeftOpen, Copy, Check, BookOpen, Code2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -15,6 +16,7 @@ type OpenFile = {
   size:     number;
   html:     string;
   lines:    number;
+  content?: string; // only present for markdown files
 };
 
 type TabState = {
@@ -52,10 +54,11 @@ export function ExploreClient({
   repo:  string;
   root:  TreeNode;
 }) {
-  const [tabs, setTabs]       = useState<TabState[]>([]);
-  const [activeTab, setActive] = useState<string | null>(null);
-  const [sidebarOpen, setSide] = useState(true);
-  const [copied, setCopied]   = useState(false);
+  const [tabs, setTabs]         = useState<TabState[]>([]);
+  const [activeTab, setActive]  = useState<string | null>(null);
+  const [sidebarOpen, setSide]  = useState(true);
+  const [copied, setCopied]     = useState(false);
+  const [mdRendered, setMdRend] = useState(true); // markdown toggle: rendered vs raw
   const codeRef = useRef<HTMLDivElement>(null);
 
   /* Fetch file content */
@@ -388,6 +391,26 @@ export function ExploreClient({
                         }}>
                           {activeFile.file.language}
                         </span>
+
+                        {/* Markdown toggle */}
+                        {activeFile.file.language === "markdown" && activeFile.file.content && (
+                          <button
+                            onClick={() => setMdRend((v) => !v)}
+                            title={mdRendered ? "Ver raw" : "Ver renderizado"}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "4px",
+                              background: mdRendered ? "rgba(167,139,250,0.1)" : "none",
+                              border: `1px solid ${mdRendered ? "rgba(167,139,250,0.3)" : "var(--border-dim)"}`,
+                              borderRadius: "4px", cursor: "pointer",
+                              color: mdRendered ? "var(--purple, #a78bfa)" : "var(--dim)",
+                              padding: "2px 7px", fontSize: "0.65rem",
+                              fontFamily: "var(--mono)", transition: "all 0.15s",
+                            }}
+                          >
+                            {mdRendered ? <BookOpen size={11} /> : <Code2 size={11} />}
+                            {mdRendered ? "rendered" : "raw"}
+                          </button>
+                        )}
                       </>
                     )}
                     <button
@@ -428,13 +451,20 @@ export function ExploreClient({
                     </div>
                   )}
 
-                  {/* Highlighted code */}
+                  {/* File content */}
                   {activeFile.file && (
-                    <div
-                      ref={codeRef}
-                      className="shiki-wrapper"
-                      dangerouslySetInnerHTML={{ __html: activeFile.file.html }}
-                    />
+                    activeFile.file.language === "markdown" && activeFile.file.content && mdRendered
+                      ? (
+                        <div style={{ padding: "1.5rem 2rem", maxWidth: 860 }}>
+                          <MarkdownSummary content={activeFile.file.content} />
+                        </div>
+                      ) : (
+                        <div
+                          ref={codeRef}
+                          className="shiki-wrapper"
+                          dangerouslySetInnerHTML={{ __html: activeFile.file.html }}
+                        />
+                      )
                   )}
                 </div>
               </div>
