@@ -654,7 +654,45 @@ function ScorecardTable({ devs }: { devs: ScorecardDev[] }) {
 
 // ── Conflitos ─────────────────────────────────────────────────────────────────
 
+function DiffView({ dev, diff }: { dev: string; diff: string }) {
+  const color = devColor(dev);
+  const lines = diff.split("\n");
+  return (
+    <div style={{ marginTop: "0.4rem", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ padding: "0.25rem 0.6rem", background: `${color}18`, borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color, fontWeight: 600 }}>{dev}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.58rem", color: C.dim }}>diff</span>
+      </div>
+      <div style={{ overflowX: "auto", maxHeight: 220, overflowY: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+          <tbody>
+            {lines.map((line, i) => {
+              const isAdd    = line.startsWith("+") && !line.startsWith("+++");
+              const isRem    = line.startsWith("-") && !line.startsWith("---");
+              const isHunk   = line.startsWith("@@");
+              const isMeta   = line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++");
+              const bg = isAdd ? "rgba(34,197,94,0.10)" : isRem ? "rgba(239,68,68,0.10)" : isHunk ? "rgba(6,182,212,0.06)" : "transparent";
+              const textColor = isAdd ? "#4ade80" : isRem ? "#f87171" : isHunk ? C.cyan : isMeta ? C.dim : C.text;
+              return (
+                <tr key={i} style={{ background: bg }}>
+                  <td style={{ width: 28, textAlign: "right", padding: "0 6px", fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim, userSelect: "none", opacity: 0.5, verticalAlign: "top" }}>
+                    {!isMeta && !isHunk ? i + 1 : ""}
+                  </td>
+                  <td style={{ padding: "0 8px 0 2px", fontFamily: "var(--mono)", fontSize: "0.65rem", color: textColor, whiteSpace: "pre", overflowX: "hidden", textOverflow: "ellipsis" }}>
+                    {line || " "}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
   if (conflitos.length === 0) return null;
   return (
     <div style={{
@@ -670,35 +708,50 @@ function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
           últimas 24h, sem commit entre devs
         </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         {conflitos.slice(0, 5).map((c, i) => {
           const minAtras = Math.round((Date.now() - new Date(c.ultima_edicao).getTime()) / 60000);
-          const tempoLabel = minAtras < 60
-            ? `${minAtras}min atrás`
-            : `${Math.round(minAtras / 60)}h atrás`;
+          const tempoLabel = minAtras < 60 ? `${minAtras}min atrás` : `${Math.round(minAtras / 60)}h atrás`;
+          const hasDiffs = Object.keys(c.diffs ?? {}).length > 0;
+          const isOpen = expanded === i;
           return (
-            <div key={i} style={{ padding: "0.6rem 1rem", borderBottom: i < conflitos.length - 1 ? `1px solid rgba(239,68,68,0.08)` : "none", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-              {/* linha 1: projeto + arquivo + tempo */}
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                <FileCode size={11} color={C.red} style={{ flexShrink: 0 }} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.text, flex: 1, minWidth: 0, wordBreak: "break-all" }}>
-                  {c.arquivo}
-                </span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, flexShrink: 0 }}>
-                  {tempoLabel}
-                </span>
-              </div>
-              {/* linha 2: projeto + devs */}
-              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", paddingLeft: "1.1rem", flexWrap: "wrap" }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4, padding: "0px 5px" }}>
-                  {c.projeto.split("/").pop()}
-                </span>
-                {c.devs.map(dev => (
-                  <span key={dev} style={{ background: `${devColor(dev)}15`, border: `1px solid ${devColor(dev)}33`, color: devColor(dev), borderRadius: 4, padding: "0px 5px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>
-                    {dev}
+            <div key={i} style={{ borderBottom: i < conflitos.length - 1 ? `1px solid rgba(239,68,68,0.08)` : "none" }}>
+              {/* cabeçalho clicável */}
+              <div
+                onClick={() => setExpanded(isOpen ? null : i)}
+                style={{ padding: "0.6rem 1rem", display: "flex", flexDirection: "column", gap: "0.3rem", cursor: hasDiffs ? "pointer" : "default" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <FileCode size={11} color={C.red} style={{ flexShrink: 0 }} />
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.text, flex: 1, minWidth: 0, wordBreak: "break-all" }}>
+                    {c.arquivo}
                   </span>
-                ))}
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, flexShrink: 0 }}>{tempoLabel}</span>
+                  {hasDiffs && (
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim, opacity: 0.7 }}>
+                      {isOpen ? "▲" : "▼"}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", paddingLeft: "1.1rem", flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4, padding: "0px 5px" }}>
+                    {c.projeto.split("/").pop()}
+                  </span>
+                  {c.devs.map(dev => (
+                    <span key={dev} style={{ background: `${devColor(dev)}15`, border: `1px solid ${devColor(dev)}33`, color: devColor(dev), borderRadius: 4, padding: "0px 5px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>
+                      {dev}
+                    </span>
+                  ))}
+                </div>
               </div>
+              {/* diffs expandidos */}
+              {isOpen && hasDiffs && (
+                <div style={{ padding: "0 1rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {Object.entries(c.diffs).map(([dev, diff]) => (
+                    <DiffView key={dev} dev={dev} diff={diff} />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

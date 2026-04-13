@@ -91,6 +91,7 @@ export type Conflito = {
   arquivo: string;
   devs: string[];
   ultima_edicao: string;
+  diffs: Record<string, string>;
 };
 
 export default async function CerebroPage() {

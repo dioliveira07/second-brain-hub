@@ -689,8 +689,9 @@ async def get_conflitos(horas: int = 24, db: AsyncSession = Depends(get_db)):
     # Para cada (projeto, arquivo): rastrear quais devs editaram sem commit depois
     # arquivo_editado → marca dev como "sujo" naquele arquivo
     # commit_realizado → limpa o dev naquele projeto
-    arquivos: dict[str, dict[str, str]] = {}  # (proj, arq) → {dev: ts}
-    commits_por_dev: dict[str, str] = {}  # dev → último commit ts
+    arquivos: dict[str, dict[str, str]] = {}   # key → {dev: ts}
+    diffs_por_key: dict[str, dict[str, str]] = {}  # key → {dev: diff}
+    commits_por_dev: dict[str, str] = {}
 
     for s in sinais:
         if s.tipo == "commit_realizado":
@@ -702,12 +703,16 @@ async def get_conflitos(horas: int = 24, db: AsyncSession = Depends(get_db)):
             key = f"{s.projeto}||{arq}"
             if key not in arquivos:
                 arquivos[key] = {}
-            # Só marca como "sem commit" se o dev não commitou depois desta edição
+                diffs_por_key[key] = {}
             ultimo_commit = commits_por_dev.get(s.dev, "")
             if not ultimo_commit or ultimo_commit < s.ts.isoformat():
                 arquivos[key][s.dev] = s.ts.isoformat()
+                diff = s.dados.get("diff", "")
+                if diff:
+                    diffs_por_key[key][s.dev] = diff
             else:
                 arquivos[key].pop(s.dev, None)
+                diffs_por_key[key].pop(s.dev, None)
 
     conflitos = []
     for key, devs_map in arquivos.items():
@@ -718,6 +723,7 @@ async def get_conflitos(horas: int = 24, db: AsyncSession = Depends(get_db)):
                 "arquivo": arq,
                 "devs": list(devs_map.keys()),
                 "ultima_edicao": max(devs_map.values()),
+                "diffs": diffs_por_key.get(key, {}),
             })
 
     conflitos.sort(key=lambda x: x["ultima_edicao"], reverse=True)
