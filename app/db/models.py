@@ -138,6 +138,19 @@ class SSHIdentity(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
+class ChatMessage(Base):
+    """Prompts enviados pelos devs em sessões Claude Code."""
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dev: Mapped[str] = mapped_column(String(100), nullable=False)
+    projeto: Mapped[str] = mapped_column(String(255), nullable=False)
+    turno: Mapped[int] = mapped_column(Integer, nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class MCPConnection(Base):
     """Rastreamento de clientes conectados ao MCP server HTTP centralizado."""
     __tablename__ = "mcp_connections"

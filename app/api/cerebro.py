@@ -16,7 +16,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity
+from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage
 
 router = APIRouter()
 
@@ -29,6 +29,14 @@ class SessaoPayload(BaseModel):
     branch: str = ""
     arquivos: list[str] = []
     ultimo_commit: str = ""
+    timestamp: str  # ISO 8601
+
+
+class MensagemPayload(BaseModel):
+    dev: str
+    projeto: str
+    turno: int = 0
+    texto: str
     timestamp: str  # ISO 8601
 
 
@@ -146,6 +154,39 @@ async def get_sessoes_projeto(projeto: str, limit: int = 10, db: AsyncSession = 
             "minutos_atras": int((agora - s.timestamp).total_seconds() / 60),
         }
         for s in sessoes
+    ]
+
+
+# ── Chat Messages ─────────────────────────────────────────────────────────────
+
+@router.post("/mensagem")
+async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depends(get_db)):
+    """Registra o prompt enviado pelo dev em uma sessão Claude Code."""
+    ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
+    db.add(ChatMessage(
+        dev=payload.dev,
+        projeto=payload.projeto,
+        turno=payload.turno,
+        texto=payload.texto,
+        ts=ts,
+    ))
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/dev/{dev}/mensagens")
+async def get_mensagens_dev(dev: str, limit: int = 50, db: AsyncSession = Depends(get_db)):
+    """Retorna os últimos prompts de um dev."""
+    result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.dev == dev)
+        .order_by(ChatMessage.ts.desc())
+        .limit(min(limit, 200))
+    )
+    msgs = result.scalars().all()
+    return [
+        {"projeto": m.projeto, "turno": m.turno, "texto": m.texto, "ts": m.ts.isoformat()}
+        for m in msgs
     ]
 
 
