@@ -94,6 +94,26 @@ export type Conflito = {
   diffs: Record<string, string>;
 };
 
+export type ChatMensagem = {
+  turno: number;
+  texto: string;
+  ts: string;
+};
+
+export type ChatSessao = {
+  session_id: string;
+  projeto: string;
+  inicio: string;
+  fim: string;
+  mensagens: ChatMensagem[];
+};
+
+export type ChatDev = {
+  dev: string;
+  total: number;
+  sessoes: ChatSessao[];
+};
+
 export default async function CerebroPage() {
   let sessoes: Sessao[] = [];
   let afinidade: AfinidadeItem[] = [];
@@ -103,6 +123,7 @@ export default async function CerebroPage() {
   let padroes: PadraoGlobal[] = [];
   let scorecard: ScorecardDev[] = [];
   let conflitos: Conflito[] = [];
+  let mensagens: ChatDev[] = [];
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -140,6 +161,10 @@ export default async function CerebroPage() {
     conflitos = cf.conflitos ?? [];
   } catch {}
 
+  try {
+    mensagens = await cerebroFetch<ChatDev[]>("/mensagens?limit=200");
+  } catch {}
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem", maxWidth: 1100 }}>
       <FadeIn delay={0}>
@@ -163,6 +188,7 @@ export default async function CerebroPage() {
         padroes={padroes}
         scorecard={scorecard}
         conflitos={conflitos}
+        mensagens={mensagens}
       />
     </div>
   );

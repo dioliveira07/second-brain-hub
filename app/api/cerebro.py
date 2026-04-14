@@ -38,6 +38,7 @@ class MensagemPayload(BaseModel):
     turno: int = 0
     texto: str
     timestamp: str  # ISO 8601
+    session_id: str | None = None
 
 
 class SinalPayload(BaseModel):
@@ -164,6 +165,7 @@ async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depend
     """Registra o prompt enviado pelo dev em uma sessão Claude Code."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
     db.add(ChatMessage(
+        session_id=payload.session_id,
         dev=payload.dev,
         projeto=payload.projeto,
         turno=payload.turno,
@@ -174,19 +176,45 @@ async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depend
     return {"status": "ok"}
 
 
-@router.get("/dev/{dev}/mensagens")
-async def get_mensagens_dev(dev: str, limit: int = 50, db: AsyncSession = Depends(get_db)):
-    """Retorna os últimos prompts de um dev."""
-    result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.dev == dev)
-        .order_by(ChatMessage.ts.desc())
-        .limit(min(limit, 200))
-    )
+@router.get("/mensagens")
+async def get_mensagens(dev: str | None = None, limit: int = 100, db: AsyncSession = Depends(get_db)):
+    """Retorna prompts agrupados por dev e sessão."""
+    q = select(ChatMessage).order_by(ChatMessage.ts.desc()).limit(min(limit, 500))
+    if dev:
+        q = q.where(ChatMessage.dev == dev)
+    result = await db.execute(q)
     msgs = result.scalars().all()
+
+    # Agrupar por dev → session_id → lista de mensagens
+    from collections import defaultdict
+    devs: dict[str, dict] = {}
+    for m in reversed(msgs):  # cronológico
+        if m.dev not in devs:
+            devs[m.dev] = {"dev": m.dev, "sessoes": {}}
+        sid = m.session_id or f"{m.dev}_{m.ts.strftime('%Y%m%d')}"
+        if sid not in devs[m.dev]["sessoes"]:
+            devs[m.dev]["sessoes"][sid] = {
+                "session_id": sid,
+                "projeto": m.projeto,
+                "inicio": m.ts.isoformat(),
+                "fim": m.ts.isoformat(),
+                "mensagens": [],
+            }
+        sess = devs[m.dev]["sessoes"][sid]
+        sess["fim"] = m.ts.isoformat()
+        sess["mensagens"].append({
+            "turno": m.turno,
+            "texto": m.texto,
+            "ts": m.ts.isoformat(),
+        })
+
     return [
-        {"projeto": m.projeto, "turno": m.turno, "texto": m.texto, "ts": m.ts.isoformat()}
-        for m in msgs
+        {
+            "dev": d["dev"],
+            "total": sum(len(s["mensagens"]) for s in d["sessoes"].values()),
+            "sessoes": sorted(d["sessoes"].values(), key=lambda s: s["fim"], reverse=True),
+        }
+        for d in sorted(devs.values(), key=lambda x: x["dev"])
     ]
 
 

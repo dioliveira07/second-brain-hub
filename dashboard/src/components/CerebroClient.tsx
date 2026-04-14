@@ -3,9 +3,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
-  ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu,
+  ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu, MessageSquare,
 } from "lucide-react";
-import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito } from "@/app/cerebro/page";
+import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito, ChatDev, ChatSessao } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -760,12 +760,97 @@ function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
   );
 }
 
+// ── Mensagens ─────────────────────────────────────────────────────────────────
+
+function SessaoCard({ sessao }: { sessao: ChatSessao }) {
+  const [open, setOpen] = useState(false);
+  const total = sessao.mensagens.length;
+  const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const proj = sessao.projeto.split("/").pop() || sessao.projeto;
+  return (
+    <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: "100%", background: open ? C.active : "transparent", border: "none", padding: "0.6rem 0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.6rem", textAlign: "left" }}
+      >
+        {open ? <ChevronDown size={12} color={C.cyan} /> : <ChevronRight size={12} color={C.dim} />}
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.cyan }}>{proj}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim }}>{inicio}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.muted, marginLeft: "auto" }}>{total} msg</span>
+      </button>
+      {open && (
+        <div style={{ borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 0 }}>
+          {sessao.mensagens.map((m, i) => (
+            <div key={i} style={{ padding: "0.55rem 0.85rem 0.55rem 2rem", borderBottom: i < sessao.mensagens.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, flexShrink: 0, paddingTop: 2 }}>T{m.turno}</span>
+              <span style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: C.text, lineHeight: 1.5, wordBreak: "break-word" }}>{m.texto}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
+  const [selectedDev, setSelectedDev] = useState<string | null>(null);
+  const devs = mensagens.map(d => d.dev);
+  const current = selectedDev ? mensagens.find(d => d.dev === selectedDev) : mensagens[0] ?? null;
+
+  if (mensagens.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+        Nenhuma mensagem registrada ainda.
+        <br />
+        <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Os prompts aparecem automaticamente após o próximo envio.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+      {/* Sidebar devs */}
+      <div style={{ width: 160, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+        {devs.map(dev => {
+          const d = mensagens.find(x => x.dev === dev)!;
+          const active = (selectedDev ?? devs[0]) === dev;
+          return (
+            <button
+              key={dev}
+              onClick={() => setSelectedDev(dev)}
+              style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.5rem 0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}
+            >
+              <Avatar name={dev} size={22} />
+              <div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: active ? C.cyan : C.text }}>{dev}</div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim }}>{d.total} msg</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sessões do dev */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 0 }}>
+        {current && (
+          <>
+            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.muted, marginBottom: "0.25rem" }}>
+              {current.sessoes.length} sessão(ões) — {current.total} prompts
+            </div>
+            {current.sessoes.map((s, i) => <SessaoCard key={i} sessao={s} />)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Root component ────────────────────────────────────────────────────────────
 
-type Tab = "ops" | "devs" | "feed" | "scorecard" | "afinidade" | "padroes" | "mcp";
+type Tab = "ops" | "devs" | "feed" | "scorecard" | "afinidade" | "padroes" | "mcp" | "mensagens";
 
 export function CerebroClient({
-  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes, scorecard, conflitos,
+  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes, scorecard, conflitos, mensagens,
 }: {
   sessoes: Sessao[];
   afinidade: AfinidadeItem[];
@@ -775,6 +860,7 @@ export function CerebroClient({
   padroes: PadraoGlobal[];
   scorecard: ScorecardDev[];
   conflitos: Conflito[];
+  mensagens: ChatDev[];
 }) {
   const [tab, setTab] = useState<Tab>("devs");
   const router = useRouter();
@@ -804,6 +890,7 @@ export function CerebroClient({
     { id: "afinidade",label: "Afinidade" },
     { id: "padroes",  label: `Padrões (${padroes.length})` },
     { id: "mcp",      label: `MCP (${activeMCP.length})` },
+    { id: "mensagens",label: `Mensagens (${mensagens.reduce((a, d) => a + d.total, 0)})` },
   ];
 
   return (
@@ -933,6 +1020,17 @@ export function CerebroClient({
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>comandos bash que falham recorrentemente</span>
           </div>
           <PadroesTable padroes={padroes} />
+        </div>
+      )}
+
+      {/* Mensagens */}
+      {tab === "mensagens" && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+            <MessageSquare size={13} color={C.cyan} />
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Prompts por dev e sessão</span>
+          </div>
+          <MensagensTab mensagens={mensagens} />
         </div>
       )}
 
