@@ -147,6 +147,7 @@ class ChatMessage(Base):
     dev: Mapped[str] = mapped_column(String(100), nullable=False)
     projeto: Mapped[str] = mapped_column(String(255), nullable=False)
     turno: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     texto: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

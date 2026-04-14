@@ -780,12 +780,15 @@ function SessaoCard({ sessao }: { sessao: ChatSessao }) {
       </button>
       {open && (
         <div style={{ borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 0 }}>
-          {sessao.mensagens.map((m, i) => (
-            <div key={i} style={{ padding: "0.55rem 0.85rem 0.55rem 2rem", borderBottom: i < sessao.mensagens.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, flexShrink: 0, paddingTop: 2 }}>T{m.turno}</span>
-              <span style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: C.text, lineHeight: 1.5, wordBreak: "break-word" }}>{m.texto}</span>
-            </div>
-          ))}
+          {sessao.mensagens.map((m, i) => {
+            const isAssistant = m.role === "assistant";
+            return (
+              <div key={i} style={{ padding: "0.55rem 0.85rem 0.55rem 2rem", borderBottom: i < sessao.mensagens.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", gap: "0.75rem", alignItems: "flex-start", background: isAssistant ? "rgba(6,182,212,0.03)" : "transparent" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: isAssistant ? C.cyan : C.dim, flexShrink: 0, paddingTop: 2, minWidth: 28 }}>{isAssistant ? "AI" : `T${m.turno}`}</span>
+                <span style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: isAssistant ? C.muted : C.text, lineHeight: 1.5, wordBreak: "break-word" }}>{m.texto}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

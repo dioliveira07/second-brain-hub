@@ -36,6 +36,7 @@ class MensagemPayload(BaseModel):
     dev: str
     projeto: str
     turno: int = 0
+    role: str = "user"
     texto: str
     timestamp: str  # ISO 8601
     session_id: str | None = None
@@ -169,6 +170,7 @@ async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depend
         dev=payload.dev,
         projeto=payload.projeto,
         turno=payload.turno,
+        role=payload.role,
         texto=payload.texto,
         ts=ts,
     ))
@@ -204,6 +206,7 @@ async def get_mensagens(dev: str | None = None, limit: int = 100, db: AsyncSessi
         sess["fim"] = m.ts.isoformat()
         sess["mensagens"].append({
             "turno": m.turno,
+            "role": m.role,
             "texto": m.texto,
             "ts": m.ts.isoformat(),
         })

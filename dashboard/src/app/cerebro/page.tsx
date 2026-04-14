@@ -96,6 +96,7 @@ export type Conflito = {
 
 export type ChatMensagem = {
   turno: number;
+  role: string;
   texto: string;
   ts: string;
 };
