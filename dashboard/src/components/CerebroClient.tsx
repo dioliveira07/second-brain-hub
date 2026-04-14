@@ -762,43 +762,86 @@ function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
 
 // ── Mensagens ─────────────────────────────────────────────────────────────────
 
-function SessaoCard({ sessao }: { sessao: ChatSessao }) {
-  const [open, setOpen] = useState(false);
-  const total = sessao.mensagens.length;
-  const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  const proj = sessao.projeto.split("/").pop() || sessao.projeto;
+function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: string; ts: string }; devName: string }) {
+  const isAssistant = m.role === "assistant";
+  const hora = new Date(m.ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
   return (
-    <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden" }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ width: "100%", background: open ? C.active : "transparent", border: "none", padding: "0.6rem 0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.6rem", textAlign: "left" }}
-      >
-        {open ? <ChevronDown size={12} color={C.cyan} /> : <ChevronRight size={12} color={C.dim} />}
-        <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.cyan }}>{proj}</span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim }}>{inicio}</span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.muted, marginLeft: "auto" }}>{total} msg</span>
-      </button>
-      {open && (
-        <div style={{ borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 0 }}>
-          {sessao.mensagens.map((m, i) => {
-            const isAssistant = m.role === "assistant";
-            return (
-              <div key={i} style={{ padding: "0.55rem 0.85rem 0.55rem 2rem", borderBottom: i < sessao.mensagens.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", gap: "0.75rem", alignItems: "flex-start", background: isAssistant ? "rgba(6,182,212,0.03)" : "transparent" }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: isAssistant ? C.cyan : C.dim, flexShrink: 0, paddingTop: 2, minWidth: 28 }}>{isAssistant ? "AI" : `T${m.turno}`}</span>
-                <span style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: isAssistant ? C.muted : C.text, lineHeight: 1.5, wordBreak: "break-word" }}>{m.texto}</span>
-              </div>
-            );
-          })}
+    <div style={{
+      display: "flex",
+      flexDirection: isAssistant ? "row" : "row-reverse",
+      gap: "0.6rem",
+      alignItems: "flex-end",
+      maxWidth: "85%",
+      alignSelf: isAssistant ? "flex-start" : "flex-end",
+    }}>
+      {/* Avatar */}
+      <div style={{ flexShrink: 0, marginBottom: 2 }}>
+        {isAssistant ? (
+          <div style={{
+            width: 26, height: 26, borderRadius: "50%",
+            background: "rgba(6,182,212,0.15)", border: "1px solid rgba(6,182,212,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "var(--mono)", fontSize: "0.6rem", fontWeight: 700, color: C.cyan,
+          }}>AI</div>
+        ) : (
+          <Avatar name={devName} size={26} />
+        )}
+      </div>
+
+      {/* Bubble */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", alignItems: isAssistant ? "flex-start" : "flex-end" }}>
+        <div style={{
+          background: isAssistant ? "rgba(6,182,212,0.06)" : "rgba(168,85,247,0.08)",
+          border: `1px solid ${isAssistant ? "rgba(6,182,212,0.2)" : "rgba(168,85,247,0.25)"}`,
+          borderRadius: isAssistant ? "4px 12px 12px 12px" : "12px 4px 12px 12px",
+          padding: "0.55rem 0.8rem",
+          maxWidth: "100%",
+        }}>
+          <span style={{
+            fontFamily: "var(--sans)", fontSize: "0.8rem",
+            color: isAssistant ? C.muted : C.text,
+            lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          }}>{m.texto}</span>
         </div>
-      )}
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora}</span>
+      </div>
+    </div>
+  );
+}
+
+function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) {
+  const proj = sessao.projeto.split("/").pop() || sessao.projeto;
+  const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return (
+    <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {/* Header sessão */}
+      <div style={{ padding: "0.6rem 1rem", background: "rgba(15,30,55,0.9)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <GitBranch size={12} color={C.cyan} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.cyan }}>{proj}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim }}>{inicio}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim, marginLeft: "auto" }}>{sessao.mensagens.length} mensagens</span>
+      </div>
+
+      {/* Mensagens */}
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.85rem", background: "rgba(8,18,35,0.5)" }}>
+        {sessao.mensagens.map((m, i) => (
+          <ChatBubble key={i} m={m} devName={devName} />
+        ))}
+      </div>
     </div>
   );
 }
 
 function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
   const [selectedDev, setSelectedDev] = useState<string | null>(null);
+  const [selectedSessao, setSelectedSessao] = useState<string | null>(null);
+
   const devs = mensagens.map(d => d.dev);
-  const current = selectedDev ? mensagens.find(d => d.dev === selectedDev) : mensagens[0] ?? null;
+  const currentDev = mensagens.find(d => d.dev === (selectedDev ?? devs[0])) ?? null;
+  const currentSessao = currentDev
+    ? (selectedSessao ? currentDev.sessoes.find(s => s.session_id === selectedSessao) : currentDev.sessoes[0]) ?? null
+    : null;
 
   if (mensagens.length === 0) {
     return (
@@ -811,38 +854,54 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-      {/* Sidebar devs */}
-      <div style={{ width: 160, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-        {devs.map(dev => {
-          const d = mensagens.find(x => x.dev === dev)!;
-          const active = (selectedDev ?? devs[0]) === dev;
-          return (
-            <button
-              key={dev}
-              onClick={() => setSelectedDev(dev)}
-              style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.5rem 0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}
-            >
-              <Avatar name={dev} size={22} />
-              <div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: active ? C.cyan : C.text }}>{dev}</div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim }}>{d.total} msg</div>
-              </div>
-            </button>
-          );
-        })}
+    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", minHeight: 400 }}>
+      {/* Sidebar */}
+      <div style={{ width: 180, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {/* Devs */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.25rem" }}>Devs</span>
+          {devs.map(dev => {
+            const d = mensagens.find(x => x.dev === dev)!;
+            const active = (selectedDev ?? devs[0]) === dev;
+            return (
+              <button key={dev} onClick={() => { setSelectedDev(dev); setSelectedSessao(null); }}
+                style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.45rem 0.65rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
+                <Avatar name={dev} size={22} />
+                <div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: active ? C.cyan : C.text }}>{dev}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{d.total} msg</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sessões do dev selecionado */}
+        {currentDev && currentDev.sessoes.length > 1 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.25rem" }}>Sessões</span>
+            {currentDev.sessoes.map((s, i) => {
+              const active = (selectedSessao ?? currentDev.sessoes[0].session_id) === s.session_id;
+              const proj = s.projeto.split("/").pop() || s.projeto;
+              const hora = new Date(s.fim).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+              return (
+                <button key={i} onClick={() => setSelectedSessao(s.session_id)}
+                  style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.4rem 0.65rem", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: active ? C.cyan : C.text }}>{proj}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora} · {s.mensagens.length}msg</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Sessões do dev */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 0 }}>
-        {current && (
-          <>
-            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.muted, marginBottom: "0.25rem" }}>
-              {current.sessoes.length} sessão(ões) — {current.total} prompts
-            </div>
-            {current.sessoes.map((s, i) => <SessaoCard key={i} sessao={s} />)}
-          </>
-        )}
+      {/* Chat */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {currentSessao
+          ? <ChatView sessao={currentSessao} devName={currentDev?.dev ?? ""} />
+          : <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>Selecione um dev</div>
+        }
       </div>
     </div>
   );
