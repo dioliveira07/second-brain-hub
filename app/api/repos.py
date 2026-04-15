@@ -137,13 +137,24 @@ async def get_file_content(
             "content":  f"/api/v1/repos/{owner}/{repo}/image?path={path}",
         }
 
-    if size > 500_000:
-        raise HTTPException(status_code=413, detail="Arquivo muito grande (>500KB)")
+    TRUNCATE_LIMIT = 5_000_000  # 5MB — acima disso recusa
+    TRUNCATE_WARN  = 500_000    # acima de 500KB trunca em 2000 linhas
+
+    if size > TRUNCATE_LIMIT:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande (>5MB)")
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        raw = file_path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao ler arquivo: {e}")
+
+    truncated = False
+    if size > TRUNCATE_WARN:
+        lines = raw.splitlines()
+        if len(lines) > 2000:
+            raw = "\n".join(lines[:2000]) + f"\n\n... [truncado — exibindo 2000/{len(lines)} linhas]"
+            truncated = True
+    content = raw
 
     ext_map = {
         ".ts": "typescript", ".tsx": "typescript",
@@ -160,10 +171,11 @@ async def get_file_content(
         language = "dockerfile"
 
     return {
-        "path":     path,
-        "language": language,
-        "size":     size,
-        "content":  content,
+        "path":      path,
+        "language":  language,
+        "size":      size,
+        "content":   content,
+        "truncated": truncated,
     }
 
 

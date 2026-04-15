@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { FileTree, type TreeNode } from "@/components/FileTree";
 import { MarkdownSummary } from "@/components/MarkdownSummary";
 import {
@@ -11,12 +11,13 @@ import Link from "next/link";
 
 /* ─── Types ──────────────────────────────────────── */
 type OpenFile = {
-  path:     string;
-  language: string;
-  size:     number;
-  html:     string;
-  lines:    number;
-  content?: string; // only present for markdown files
+  path:      string;
+  language:  string;
+  size:      number;
+  html:      string;
+  lines:     number;
+  truncated?: boolean;
+  content?:  string; // markdown ou data URL de imagem
 };
 
 type TabState = {
@@ -45,6 +46,84 @@ const LANG_COLORS: Record<string, string> = {
   markdown: "#a78bfa", sql: "#fbbf24", bash: "#22c55e",
   dockerfile: "#06b6d4", text: "#5a7a9a",
 };
+
+/* ─── Image Viewer ───────────────────────────────── */
+function ImageViewer({ src, alt }: { src: string; alt: string }) {
+  const [zoom, setZoom]       = useState(1);
+  const [offset, setOffset]   = useState({ x: 0, y: 0 });
+  const [dragging, setDrag]   = useState(false);
+  const dragStart             = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+
+  const MIN = 0.2, MAX = 8;
+  const clamp = (v: number) => Math.min(MAX, Math.max(MIN, v));
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    setZoom((z) => clamp(z * (e.deltaY < 0 ? 1.12 : 0.88)));
+  }, []);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    setDrag(true);
+    dragStart.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+  };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragging || !dragStart.current) return;
+    setOffset({ x: dragStart.current.ox + e.clientX - dragStart.current.x, y: dragStart.current.oy + e.clientY - dragStart.current.y });
+  };
+  const stopDrag = () => { setDrag(false); dragStart.current = null; };
+
+  // Reset ao trocar imagem
+  useEffect(() => { setZoom(1); setOffset({ x: 0, y: 0 }); }, [src]);
+
+  return (
+    <div style={{ position: "relative", height: "100%", overflow: "hidden", background: "#0d0d0d", userSelect: "none" }}
+      onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}
+    >
+      {/* Toolbar */}
+      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", gap: 6 }}>
+        {[
+          { label: "−", fn: () => setZoom((z) => clamp(z * 0.75)) },
+          { label: `${Math.round(zoom * 100)}%`, fn: () => { setZoom(1); setOffset({ x: 0, y: 0 }); } },
+          { label: "+", fn: () => setZoom((z) => clamp(z * 1.33)) },
+          { label: "⤢",  fn: () => setZoom(MAX) },
+        ].map(({ label, fn }) => (
+          <button key={label} onClick={fn} style={{
+            background: "#1a1a1a", border: "1px solid #333", color: "#ccc",
+            borderRadius: 4, padding: "3px 9px", fontSize: "0.75rem",
+            cursor: "pointer", fontFamily: "var(--mono)",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* Imagem */}
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src} alt={alt}
+          draggable={false}
+          style={{
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+            transformOrigin: "center",
+            transition: dragging ? "none" : "transform 0.1s ease",
+            maxWidth: zoom <= 1 ? "100%" : "none",
+            maxHeight: zoom <= 1 ? "100%" : "none",
+            cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "default",
+            borderRadius: 4,
+          }}
+        />
+      </div>
+
+      {/* Hint */}
+      {zoom === 1 && (
+        <span style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)",
+          fontFamily: "var(--mono)", fontSize: "0.6rem", color: "#444", pointerEvents: "none" }}>
+          scroll para zoom · clique no % para resetar
+        </span>
+      )}
+    </div>
+  );
+}
 
 /* ─── Main component ─────────────────────────────── */
 export function ExploreClient({
@@ -392,6 +471,18 @@ export function ExploreClient({
                           {activeFile.file.language}
                         </span>
 
+                        {/* Aviso de truncado */}
+                        {activeFile.file.truncated && (
+                          <span style={{
+                            fontFamily: "var(--mono)", fontSize: "0.65rem",
+                            color: "#f59e0b", background: "#f59e0b14",
+                            border: "1px solid #f59e0b30",
+                            borderRadius: "3px", padding: "1px 6px",
+                          }}>
+                            truncado (2000 linhas)
+                          </span>
+                        )}
+
                         {/* Markdown toggle */}
                         {activeFile.file.language === "markdown" && activeFile.file.content && (
                           <button
@@ -454,16 +545,8 @@ export function ExploreClient({
                   {/* File content */}
                   {activeFile.file && (
                     activeFile.file.language === "image" && activeFile.file.content
-                      ? (
-                        <div style={{ padding: "2rem", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={activeFile.file.content}
-                            alt={activeFile.file.path}
-                            style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 6, border: "1px solid #333" }}
-                          />
-                        </div>
-                      ) : activeFile.file.language === "markdown" && activeFile.file.content && mdRendered
+                      ? <ImageViewer src={activeFile.file.content} alt={activeFile.file.path} />
+                      : activeFile.file.language === "markdown" && activeFile.file.content && mdRendered
                       ? (
                         <div style={{ padding: "1.5rem 2rem", maxWidth: 860 }}>
                           <MarkdownSummary content={activeFile.file.content} />

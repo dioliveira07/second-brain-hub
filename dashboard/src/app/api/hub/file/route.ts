@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   // Buscar conteúdo do arquivo na hub API
   const apiUrl = `${HUB_URL}/api/v1/repos/${owner}/${repo}/file?path=${encodeURIComponent(path)}`;
-  let data: { content: string; language: string; size: number; path: string };
+  let data: { content: string; language: string; size: number; path: string; truncated?: boolean };
   try {
     const res = await fetch(apiUrl, { cache: "no-store" });
     if (!res.ok) {
@@ -79,11 +79,12 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    path:     data.path,
-    language: data.language,
-    size:     data.size,
+    path:      data.path,
+    language:  data.language,
+    size:      data.size,
     html,
-    lines:    data.content.split("\n").length,
+    lines:     data.content.split("\n").length,
+    truncated: data.truncated ?? false,
     // raw content returned for markdown files so the client can render it
     ...(data.language === "markdown" ? { content: data.content } : {}),
   });
