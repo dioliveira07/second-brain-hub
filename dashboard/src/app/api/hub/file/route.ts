@@ -49,15 +49,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Hub indisponível: ${e}` }, { status: 502 });
   }
 
-  // Imagens: retornar data URL diretamente sem highlight
+  // Imagens: construir URL pública para o endpoint /image do hub
   if (data.language === "image") {
+    const imageUrl = `/painel/api/hub/image?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`;
     return NextResponse.json({
       path:     data.path,
       language: "image",
       size:     data.size,
       html:     "",
       lines:    0,
-      content:  data.content, // data:image/...;base64,...
+      content:  imageUrl,
     });
   }
 

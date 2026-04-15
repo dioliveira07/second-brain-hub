@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -123,28 +124,21 @@ async def get_file_content(
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
 
-    size = file_path.stat().st_size
-    if size > 500_000:
-        raise HTTPException(status_code=413, detail="Arquivo muito grande (>500KB)")
-
     IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp"}
-    IMAGE_MIME = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
-        ".ico": "image/x-icon", ".bmp": "image/bmp",
-    }
     suffix = file_path.suffix.lower()
+    size = file_path.stat().st_size
 
+    # Imagens: retornar metadados + URL para o endpoint /image (sem limite de tamanho)
     if suffix in IMAGE_EXTS:
-        import base64
-        raw = file_path.read_bytes()
-        mime = IMAGE_MIME.get(suffix, "image/octet-stream")
         return {
             "path":     path,
             "language": "image",
             "size":     size,
-            "content":  f"data:{mime};base64,{base64.b64encode(raw).decode()}",
+            "content":  f"/api/v1/repos/{owner}/{repo}/image?path={path}",
         }
+
+    if size > 500_000:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande (>500KB)")
 
     try:
         content = file_path.read_text(encoding="utf-8", errors="replace")
@@ -171,3 +165,37 @@ async def get_file_content(
         "size":     size,
         "content":  content,
     }
+
+
+IMAGE_MIME = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
+    ".ico": "image/x-icon", ".bmp": "image/bmp",
+}
+
+@router.get("/{owner}/{repo}/image")
+async def get_image(
+    owner: str,
+    repo: str,
+    path: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve imagem binária diretamente — sem limite de 500KB."""
+    full_name = f"{owner}/{repo}"
+    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Repo não indexado")
+
+    repo_dir = REPOS_DIR / f"{owner}_{repo}"
+    try:
+        file_path = (repo_dir / path).resolve()
+        file_path.relative_to(repo_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path inválido")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    suffix = file_path.suffix.lower()
+    mime = IMAGE_MIME.get(suffix, "application/octet-stream")
+    return Response(content=file_path.read_bytes(), media_type=mime)
