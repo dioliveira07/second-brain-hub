@@ -17,7 +17,7 @@ services:
         condition: service_healthy
     volumes:
       - git-mirrors:/data/repos
-      - /root/.local/share/claude/versions/2.1.109:/usr/local/bin/claude:ro
+      - /root/.local/share/claude/current:/usr/local/bin/claude:ro
       - /root/.claude.json:/root/.claude.json:ro
       - /root/.claude:/root/.claude:ro
       - /root/skills:/root/skills:ro
@@ -35,7 +35,7 @@ services:
       - qdrant
     volumes:
       - git-mirrors:/data/repos
-      - /root/.local/share/claude/versions/2.1.109:/usr/local/bin/claude:ro
+      - /root/.local/share/claude/current:/usr/local/bin/claude:ro
       - /root/.claude.json:/root/.claude.json:ro
       - /root/.claude:/root/.claude:ro
     environment:
