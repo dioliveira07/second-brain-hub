@@ -453,7 +453,17 @@ export function ExploreClient({
 
                   {/* File content */}
                   {activeFile.file && (
-                    activeFile.file.language === "markdown" && activeFile.file.content && mdRendered
+                    activeFile.file.language === "image" && activeFile.file.content
+                      ? (
+                        <div style={{ padding: "2rem", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={activeFile.file.content}
+                            alt={activeFile.file.path}
+                            style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 6, border: "1px solid #333" }}
+                          />
+                        </div>
+                      ) : activeFile.file.language === "markdown" && activeFile.file.content && mdRendered
                       ? (
                         <div style={{ padding: "1.5rem 2rem", maxWidth: 860 }}>
                           <MarkdownSummary content={activeFile.file.content} />

@@ -49,6 +49,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Hub indisponível: ${e}` }, { status: 502 });
   }
 
+  // Imagens: retornar data URL diretamente sem highlight
+  if (data.language === "image") {
+    return NextResponse.json({
+      path:     data.path,
+      language: "image",
+      size:     data.size,
+      html:     "",
+      lines:    0,
+      content:  data.content, // data:image/...;base64,...
+    });
+  }
+
   // Highlight com shiki (VS Code Dark+ theme)
   const lang = LANG_MAP[data.language] ?? "text";
   let html = "";

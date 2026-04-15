@@ -127,6 +127,25 @@ async def get_file_content(
     if size > 500_000:
         raise HTTPException(status_code=413, detail="Arquivo muito grande (>500KB)")
 
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp"}
+    IMAGE_MIME = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
+        ".ico": "image/x-icon", ".bmp": "image/bmp",
+    }
+    suffix = file_path.suffix.lower()
+
+    if suffix in IMAGE_EXTS:
+        import base64
+        raw = file_path.read_bytes()
+        mime = IMAGE_MIME.get(suffix, "image/octet-stream")
+        return {
+            "path":     path,
+            "language": "image",
+            "size":     size,
+            "content":  f"data:{mime};base64,{base64.b64encode(raw).decode()}",
+        }
+
     try:
         content = file_path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
@@ -142,7 +161,6 @@ async def get_file_content(
         ".toml": "toml", ".md": "markdown", ".sql": "sql",
         ".sh": "bash", ".env": "bash",
     }
-    suffix = file_path.suffix.lower()
     language = ext_map.get(suffix, "text")
     if file_path.name.lower() == "dockerfile":
         language = "dockerfile"
