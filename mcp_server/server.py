@@ -174,6 +174,32 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["projeto"],
             },
         ),
+        types.Tool(
+            name="get_repo_file",
+            description="Retorna o conteúdo de um arquivo de um repo indexado. Para imagens retorna a URL de download.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string", "description": "Dono do repo (ex: dioliveira07)"},
+                    "repo":  {"type": "string", "description": "Nome do repo (ex: cotacao-inteligente-crm)"},
+                    "path":  {"type": "string", "description": "Caminho do arquivo dentro do repo (ex: src/index.ts)"},
+                },
+                "required": ["owner", "repo", "path"],
+            },
+        ),
+        types.Tool(
+            name="download_repo_path",
+            description="Gera URL de download ZIP de uma pasta ou arquivo de um repo indexado. path vazio = repo inteiro.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string", "description": "Dono do repo (ex: dioliveira07)"},
+                    "repo":  {"type": "string", "description": "Nome do repo (ex: bugs-repo)"},
+                    "path":  {"type": "string", "description": "Subpath da pasta/arquivo (vazio = repo inteiro)", "default": ""},
+                },
+                "required": ["owner", "repo"],
+            },
+        ),
     ]
 
 
@@ -291,6 +317,34 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                         r = " > ".join(f"{x['dev']} ({x['score']}pts)" for x in ranking[:3])
                         af_text = f"\n**Afinidade:** {r}"
                 text = f"# Status: {projeto}{git_info}{af_text}"
+
+            elif name == "get_repo_file":
+                owner = arguments["owner"]
+                repo  = arguments["repo"]
+                path  = arguments["path"]
+                resp  = await client.get(
+                    f"{hub_url}/api/v1/repos/{owner}/{repo}/file",
+                    params={"path": path}, headers=headers
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("language") == "image":
+                        text = f"**Imagem:** `{path}`\n**Tamanho:** {data['size']} bytes\n**Download:** {hub_url}/api/v1/repos/{owner}/{repo}/image?path={path}"
+                    else:
+                        trunc = " *(truncado)*" if data.get("truncated") else ""
+                        text = f"**Arquivo:** `{path}` ({data['language']}){trunc}\n\n```{data['language']}\n{data['content']}\n```"
+                else:
+                    text = f"Erro {resp.status_code}: {resp.text[:200]}"
+
+            elif name == "download_repo_path":
+                owner = arguments["owner"]
+                repo  = arguments["repo"]
+                path  = arguments.get("path", "")
+                url   = f"{hub_url}/api/v1/repos/{owner}/{repo}/download"
+                if path:
+                    url += f"?path={path}"
+                label = path or repo
+                text  = f"**Download ZIP:** `{label}`\n\nURL direta (válida enquanto o hub estiver online):\n```\n{url}\n```\nUse `curl -L '{url}' -o {label.replace('/', '_')}.zip` para baixar."
 
             else:
                 text = f"Tool desconhecida: {name}"

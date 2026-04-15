@@ -1,8 +1,10 @@
+import io
 import os
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -211,3 +213,70 @@ async def get_image(
     suffix = file_path.suffix.lower()
     mime = IMAGE_MIME.get(suffix, "application/octet-stream")
     return Response(content=file_path.read_bytes(), media_type=mime)
+
+
+@router.get("/{owner}/{repo}/download")
+async def download_path(
+    owner: str,
+    repo: str,
+    path: str = Query("", description="Subpath dentro do repo (vazio = repo inteiro)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download de arquivo ou pasta como ZIP. path vazio = repo inteiro."""
+    full_name = f"{owner}/{repo}"
+    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Repo não indexado")
+
+    repo_dir = REPOS_DIR / f"{owner}_{repo}"
+    if not repo_dir.exists():
+        raise HTTPException(status_code=404, detail="Clone local não encontrado")
+
+    # Sanitizar path
+    if path:
+        try:
+            target = (repo_dir / path).resolve()
+            target.relative_to(repo_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Path inválido")
+    else:
+        target = repo_dir
+
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Caminho não encontrado")
+
+    # Arquivo único — serve direto
+    if target.is_file():
+        zip_name = target.name + ".zip"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(target, target.name)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+        )
+
+    # Diretório — empacota recursivamente
+    folder_name = target.name if path else repo
+    zip_name = f"{folder_name}.zip"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in target.rglob("*"):
+            if file.is_file():
+                # Excluir .git
+                if ".git" in file.parts:
+                    continue
+                arcname = Path(folder_name) / file.relative_to(target)
+                try:
+                    zf.write(file, arcname)
+                except Exception:
+                    pass  # ignora arquivos não legíveis
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )

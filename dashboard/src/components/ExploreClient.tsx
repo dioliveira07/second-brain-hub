@@ -300,7 +300,7 @@ export function ExploreClient({
 
           {/* File tree */}
           <div style={{ flex: 1, overflowY: "auto", padding: "0.35rem 0.5rem 1rem" }}>
-            <FileTreeClickable root={root} onFileClick={openFile} activeFile={activeTab} />
+            <FileTreeClickable root={root} onFileClick={openFile} activeFile={activeTab} owner={owner} repo={repo} />
           </div>
         </div>
 
@@ -616,11 +616,13 @@ export function ExploreClient({
 
 /* ─── FileTree adaptado para IDE (sem search/stats) ── */
 function FileTreeClickable({
-  root, onFileClick, activeFile,
+  root, onFileClick, activeFile, owner, repo,
 }: {
   root:        TreeNode;
   onFileClick: (path: string) => void;
   activeFile:  string | null;
+  owner:       string;
+  repo:        string;
 }) {
   return (
     <div>
@@ -633,6 +635,8 @@ function FileTreeClickable({
           lineStack={[]}
           onFileClick={onFileClick}
           activeFile={activeFile}
+          owner={owner}
+          repo={repo}
         />
       ))}
     </div>
@@ -655,7 +659,7 @@ const LANG_ICONS: Record<string, string> = {
 };
 
 function ClickableNode({
-  node, depth, isLast, lineStack, onFileClick, activeFile,
+  node, depth, isLast, lineStack, onFileClick, activeFile, owner, repo,
 }: {
   node:        TreeNode;
   depth:       number;
@@ -663,9 +667,12 @@ function ClickableNode({
   lineStack:   boolean[];
   onFileClick: (path: string) => void;
   activeFile:  string | null;
+  owner:       string;
+  repo:        string;
 }) {
   const isDir  = !!node.children;
   const [open, setOpen] = useState(depth < 1);
+  const [hovered, setHovered] = useState(false);
   const name   = node.path === "." ? "." : (node.path.split("/").pop() ?? node.path);
   const lang   = node.language ?? "";
   const color  = isDir ? "#fbbf24" : (LANG_COLORS2[lang] ?? "#5a7a9a");
@@ -699,9 +706,11 @@ function ClickableNode({
           minHeight:   22,
         }}
         onMouseEnter={(e) => {
+          setHovered(true);
           if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "var(--bg-hover)";
         }}
         onMouseLeave={(e) => {
+          setHovered(false);
           if (!isActive) (e.currentTarget as HTMLDivElement).style.background = isActive ? "rgba(6,182,212,0.1)" : "transparent";
         }}
       >
@@ -737,6 +746,25 @@ function ClickableNode({
         }}>
           {name}{isDir && <span style={{ color: "var(--dim)" }}>/</span>}
         </span>
+
+        {/* Botão download — aparece no hover para dirs e arquivos */}
+        {hovered && (
+          <a
+            href={`/painel/api/hub/download?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(node.path === "." ? "" : node.path)}`}
+            download
+            onClick={(e) => e.stopPropagation()}
+            title={isDir ? "Baixar pasta como ZIP" : "Baixar arquivo"}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 18, height: 18, borderRadius: 3, flexShrink: 0,
+              background: "#ffffff10", border: "1px solid #ffffff15",
+              color: "#888", fontSize: "0.6rem", textDecoration: "none",
+              cursor: "pointer",
+            }}
+          >
+            ↓
+          </a>
+        )}
       </div>
 
       {isDir && open && node.children && (
@@ -748,6 +776,8 @@ function ClickableNode({
               depth={depth + 1}
               isLast={i === node.children!.length - 1}
               lineStack={[...lineStack, !isLast]}
+              owner={owner}
+              repo={repo}
               onFileClick={onFileClick}
               activeFile={activeFile}
             />
