@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Virtuoso } from "react-virtuoso";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
   ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu, MessageSquare,
@@ -865,8 +865,26 @@ function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) 
 }
 
 function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
-  const [selectedDev, setSelectedDev] = useState<string | null>(null);
-  const [selectedSessao, setSelectedSessao] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [selectedDev, setSelectedDev] = useState<string | null>(searchParams.get("dev"));
+  const [selectedSessao, setSelectedSessao] = useState<string | null>(searchParams.get("sessao"));
+
+  function selectDev(dev: string) {
+    setSelectedDev(dev);
+    setSelectedSessao(null);
+    const p = new URLSearchParams(searchParams.toString());
+    p.set("dev", dev);
+    p.delete("sessao");
+    router.replace(`?${p.toString()}`, { scroll: false });
+  }
+
+  function selectSessao(sid: string) {
+    setSelectedSessao(sid);
+    const p = new URLSearchParams(searchParams.toString());
+    p.set("sessao", sid);
+    router.replace(`?${p.toString()}`, { scroll: false });
+  }
 
   const devs = mensagens.map(d => d.dev);
   const currentDev = mensagens.find(d => d.dev === (selectedDev ?? devs[0])) ?? null;
@@ -895,7 +913,7 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
             const d = mensagens.find(x => x.dev === dev)!;
             const active = (selectedDev ?? devs[0]) === dev;
             return (
-              <button key={dev} onClick={() => { setSelectedDev(dev); setSelectedSessao(null); }}
+              <button key={dev} onClick={() => selectDev(dev)}
                 style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.45rem 0.65rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
                 <Avatar name={dev} size={22} />
                 <div>
@@ -916,7 +934,7 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
               const proj = s.projeto.split("/").pop() || s.projeto;
               const hora = new Date(s.fim).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
               return (
-                <button key={i} onClick={() => setSelectedSessao(s.session_id)}
+                <button key={i} onClick={() => selectSessao(s.session_id)}
                   style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.4rem 0.65rem", cursor: "pointer", textAlign: "left" }}>
                   <div style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: active ? C.cyan : C.text }}>{proj}</div>
                   <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora} · {s.mensagens.length}msg</div>
@@ -955,8 +973,18 @@ export function CerebroClient({
   conflitos: Conflito[];
   mensagens: ChatDev[];
 }) {
-  const [tab, setTab] = useState<Tab>("devs");
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const VALID_TABS: Tab[] = ["devs", "ops", "feed", "scorecard", "afinidade", "padroes", "mensagens"];
+  const initialTab = (searchParams.get("tab") as Tab | null);
+  const [tab, setTab] = useState<Tab>(VALID_TABS.includes(initialTab as Tab) ? initialTab! : "devs");
+
+  function changeTab(t: Tab) {
+    setTab(t);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", t);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
 
   useEffect(() => {
     const id = setInterval(() => router.refresh(), 30_000);
@@ -1012,7 +1040,7 @@ export function CerebroClient({
         {TABS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             style={{
               background: tab === t.id ? C.active : "transparent",
               border: "none", borderBottom: `2px solid ${tab === t.id ? C.cyan : "transparent"}`,

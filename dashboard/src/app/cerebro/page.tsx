@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { cerebroFetch } from "@/lib/hub";
 import { FadeIn } from "@/components/reactbits/FadeIn";
 import { CerebroClient } from "@/components/CerebroClient";
@@ -180,17 +181,19 @@ export default async function CerebroPage() {
         </div>
       </FadeIn>
 
-      <CerebroClient
-        sessoes={sessoes}
-        afinidade={afinidade}
-        mcpConns={mcpConns}
-        sshIdentities={sshIdentities}
-        sinais={sinais}
-        padroes={padroes}
-        scorecard={scorecard}
-        conflitos={conflitos}
-        mensagens={mensagens}
-      />
+      <Suspense>
+        <CerebroClient
+          sessoes={sessoes}
+          afinidade={afinidade}
+          mcpConns={mcpConns}
+          sshIdentities={sshIdentities}
+          sinais={sinais}
+          padroes={padroes}
+          scorecard={scorecard}
+          conflitos={conflitos}
+          mensagens={mensagens}
+        />
+      </Suspense>
     </div>
   );
 }
