@@ -1,5 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Virtuoso } from "react-virtuoso";
 import { useRouter } from "next/navigation";
 import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
@@ -762,6 +765,28 @@ function ConflitosSection({ conflitos }: { conflitos: Conflito[] }) {
 
 // ── Mensagens ─────────────────────────────────────────────────────────────────
 
+const mdComponents = {
+  p:          ({ children }: React.HTMLAttributes<HTMLElement>) => <p style={{ margin: "0 0 0.5em", lineHeight: 1.55 }}>{children}</p>,
+  code:       ({ children, className }: React.HTMLAttributes<HTMLElement>) => {
+    const isBlock = className?.includes("language-");
+    return isBlock
+      ? <code style={{ display: "block", background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, padding: "0.6rem 0.8rem", fontFamily: "var(--mono)", fontSize: "0.72rem", color: "#a5f3fc", overflowX: "auto", whiteSpace: "pre", margin: "0.4em 0" }}>{children}</code>
+      : <code style={{ background: "rgba(0,0,0,0.3)", borderRadius: 3, padding: "0.1em 0.4em", fontFamily: "var(--mono)", fontSize: "0.75em", color: "#7dd3fc" }}>{children}</code>;
+  },
+  pre:        ({ children }: React.HTMLAttributes<HTMLElement>) => <pre style={{ margin: "0.4em 0", overflow: "auto" }}>{children}</pre>,
+  h1:         ({ children }: React.HTMLAttributes<HTMLElement>) => <h1 style={{ fontSize: "1rem", fontWeight: 700, margin: "0.6em 0 0.3em", color: C.text }}>{children}</h1>,
+  h2:         ({ children }: React.HTMLAttributes<HTMLElement>) => <h2 style={{ fontSize: "0.9rem", fontWeight: 700, margin: "0.5em 0 0.25em", color: C.text }}>{children}</h2>,
+  h3:         ({ children }: React.HTMLAttributes<HTMLElement>) => <h3 style={{ fontSize: "0.82rem", fontWeight: 600, margin: "0.4em 0 0.2em", color: C.muted }}>{children}</h3>,
+  ul:         ({ children }: React.HTMLAttributes<HTMLElement>) => <ul style={{ margin: "0.3em 0 0.3em 1.2em", padding: 0 }}>{children}</ul>,
+  ol:         ({ children }: React.HTMLAttributes<HTMLElement>) => <ol style={{ margin: "0.3em 0 0.3em 1.2em", padding: 0 }}>{children}</ol>,
+  li:         ({ children }: React.HTMLAttributes<HTMLElement>) => <li style={{ marginBottom: "0.15em" }}>{children}</li>,
+  strong:     ({ children }: React.HTMLAttributes<HTMLElement>) => <strong style={{ color: C.text, fontWeight: 600 }}>{children}</strong>,
+  em:         ({ children }: React.HTMLAttributes<HTMLElement>) => <em style={{ color: C.muted }}>{children}</em>,
+  blockquote: ({ children }: React.HTMLAttributes<HTMLElement>) => <blockquote style={{ borderLeft: `3px solid ${C.cyan}`, paddingLeft: "0.75rem", margin: "0.4em 0", color: C.dim, fontStyle: "italic" }}>{children}</blockquote>,
+  a:          ({ children, href }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} style={{ color: C.cyan, textDecoration: "underline" }} target="_blank" rel="noreferrer">{children}</a>,
+  hr:         () => <hr style={{ border: "none", borderTop: `1px solid ${C.border}`, margin: "0.6em 0" }} />,
+};
+
 function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: string; ts: string }; devName: string }) {
   const isAssistant = m.role === "assistant";
   const hora = new Date(m.ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -772,10 +797,9 @@ function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: s
       flexDirection: isAssistant ? "row" : "row-reverse",
       gap: "0.6rem",
       alignItems: "flex-end",
-      maxWidth: "85%",
+      maxWidth: "88%",
       alignSelf: isAssistant ? "flex-start" : "flex-end",
     }}>
-      {/* Avatar */}
       <div style={{ flexShrink: 0, marginBottom: 2 }}>
         {isAssistant ? (
           <div style={{
@@ -789,20 +813,20 @@ function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: s
         )}
       </div>
 
-      {/* Bubble */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", alignItems: isAssistant ? "flex-start" : "flex-end" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", alignItems: isAssistant ? "flex-start" : "flex-end", minWidth: 0 }}>
         <div style={{
-          background: isAssistant ? "rgba(6,182,212,0.06)" : "rgba(168,85,247,0.08)",
-          border: `1px solid ${isAssistant ? "rgba(6,182,212,0.2)" : "rgba(168,85,247,0.25)"}`,
+          background: isAssistant ? "rgba(6,182,212,0.05)" : "rgba(168,85,247,0.08)",
+          border: `1px solid ${isAssistant ? "rgba(6,182,212,0.18)" : "rgba(168,85,247,0.25)"}`,
           borderRadius: isAssistant ? "4px 12px 12px 12px" : "12px 4px 12px 12px",
-          padding: "0.55rem 0.8rem",
-          maxWidth: "100%",
+          padding: "0.6rem 0.85rem",
+          fontSize: "0.8rem",
+          color: isAssistant ? C.muted : C.text,
+          wordBreak: "break-word",
+          minWidth: 0,
         }}>
-          <span style={{
-            fontFamily: "var(--sans)", fontSize: "0.8rem",
-            color: isAssistant ? C.muted : C.text,
-            lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word",
-          }}>{m.texto}</span>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents as never}>
+            {m.texto}
+          </ReactMarkdown>
         </div>
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora}</span>
       </div>
@@ -813,22 +837,29 @@ function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: s
 function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) {
   const proj = sessao.projeto.split("/").pop() || sessao.projeto;
   const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
   return (
-    <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      {/* Header sessão */}
-      <div style={{ padding: "0.6rem 1rem", background: "rgba(15,30,55,0.9)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.75rem" }}>
+    <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column", height: 560 }}>
+      {/* Header */}
+      <div style={{ padding: "0.6rem 1rem", background: "rgba(15,30,55,0.95)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.75rem", flexShrink: 0 }}>
         <GitBranch size={12} color={C.cyan} />
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.cyan }}>{proj}</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim }}>{inicio}</span>
         <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: C.dim, marginLeft: "auto" }}>{sessao.mensagens.length} mensagens</span>
       </div>
 
-      {/* Mensagens */}
-      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.85rem", background: "rgba(8,18,35,0.5)" }}>
-        {sessao.mensagens.map((m, i) => (
-          <ChatBubble key={i} m={m} devName={devName} />
-        ))}
-      </div>
+      {/* Scroll virtual */}
+      <Virtuoso
+        style={{ flex: 1, background: "rgba(8,18,35,0.5)" }}
+        data={sessao.mensagens}
+        initialTopMostItemIndex={sessao.mensagens.length - 1}
+        followOutput="smooth"
+        itemContent={(_, m) => (
+          <div style={{ padding: "0.5rem 1rem" }}>
+            <ChatBubble m={m} devName={devName} />
+          </div>
+        )}
+      />
     </div>
   );
 }

@@ -96,7 +96,7 @@ async def get_contexto_projeto(projeto: str, db: AsyncSession = Depends(get_db))
     )
     s = result.scalar_one_or_none()
     if not s:
-        raise HTTPException(status_code=404, detail="Nenhuma sessão encontrada para este projeto")
+        return {}  # projeto sem histórico — retorna vazio sem quebrar o caller
 
     agora = datetime.now(timezone.utc)
     minutos_atras = int((agora - s.timestamp).total_seconds() / 60)
@@ -119,6 +119,31 @@ async def get_todas_sessoes(limit: int = 30, db: AsyncSession = Depends(get_db))
         select(SessionContext)
         .order_by(SessionContext.timestamp.desc())
         .limit(limit)
+    )
+    sessoes = result.scalars().all()
+    agora = datetime.now(timezone.utc)
+    return [
+        {
+            "dev": s.dev,
+            "projeto": s.projeto,
+            "branch": s.branch,
+            "arquivos": s.arquivos,
+            "ultimo_commit": s.ultimo_commit,
+            "minutos_atras": int((agora - s.timestamp).total_seconds() / 60),
+            "timestamp": s.timestamp.isoformat(),
+        }
+        for s in sessoes
+    ]
+
+
+@router.get("/sessoes/ativas")
+async def get_sessoes_ativas(janela_minutos: int = 60, db: AsyncSession = Depends(get_db)):
+    """Retorna sessões ativas (com heartbeat nos últimos N minutos)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=janela_minutos)
+    result = await db.execute(
+        select(SessionContext)
+        .where(SessionContext.timestamp >= cutoff)
+        .order_by(SessionContext.timestamp.desc())
     )
     sessoes = result.scalars().all()
     agora = datetime.now(timezone.utc)

@@ -1,4 +1,4 @@
-import { hubFetch } from "@/lib/hub";
+import { hubFetch, cerebroFetch } from "@/lib/hub";
 import { FadeIn } from "@/components/reactbits/FadeIn";
 import { GitCommitHorizontal, FileCode2, Clock, Layers, User } from "lucide-react";
 
@@ -74,9 +74,9 @@ export default async function EditsPage() {
 
   try {
     [sinais, sessoes, scorecard] = await Promise.all([
-      hubFetch<Sinal[]>("/cerebro/sinais"),
-      hubFetch<Sessao[]>("/cerebro/sessoes"),
-      hubFetch<Scorecard>("/cerebro/scorecard"),
+      cerebroFetch<Sinal[]>("/sinais"),
+      cerebroFetch<Sessao[]>("/sessoes"),
+      cerebroFetch<Scorecard>("/scorecard"),
     ]);
   } catch {}
 
