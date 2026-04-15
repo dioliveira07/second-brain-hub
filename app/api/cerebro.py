@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -188,17 +188,25 @@ async def get_sessoes_projeto(projeto: str, limit: int = 10, db: AsyncSession = 
 
 @router.post("/mensagem")
 async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depends(get_db)):
-    """Registra o prompt enviado pelo dev em uma sessão Claude Code."""
+    """Registra o prompt enviado pelo dev em uma sessão Claude Code. Ignora duplicatas."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
-    db.add(ChatMessage(
-        session_id=payload.session_id,
-        dev=payload.dev,
-        projeto=payload.projeto,
-        turno=payload.turno,
-        role=payload.role,
-        texto=payload.texto,
-        ts=ts,
-    ))
+    # ON CONFLICT DO NOTHING — evita duplicatas por (session_id, turno, role)
+    await db.execute(
+        text("""
+            INSERT INTO chat_messages (id, session_id, dev, projeto, turno, role, texto, ts, created_at)
+            VALUES (gen_random_uuid(), :session_id, :dev, :projeto, :turno, :role, :texto, :ts, now())
+            ON CONFLICT (session_id, turno, role) DO NOTHING
+        """),
+        {
+            "session_id": payload.session_id,
+            "dev": payload.dev,
+            "projeto": payload.projeto,
+            "turno": payload.turno,
+            "role": payload.role,
+            "texto": payload.texto[:3000],
+            "ts": ts,
+        }
+    )
     await db.commit()
     return {"status": "ok"}
 

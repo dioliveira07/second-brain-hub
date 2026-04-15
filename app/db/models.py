@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -141,6 +141,9 @@ class SSHIdentity(Base):
 class ChatMessage(Base):
     """Prompts enviados pelos devs em sessões Claude Code."""
     __tablename__ = "chat_messages"
+    __table_args__ = (
+        UniqueConstraint("session_id", "turno", "role", name="uq_chat_session_turno_role"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
