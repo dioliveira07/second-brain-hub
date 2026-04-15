@@ -35,6 +35,7 @@ except ImportError:
 
 CONFIG_PATH = Path.home() / ".second-brain" / "config.json"
 DEFAULT_HUB_URL = "http://localhost:8010"
+PUBLIC_HUB_URL  = "https://hub.fluxiom.com.br"
 
 
 def load_config() -> dict:
@@ -329,7 +330,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("language") == "image":
-                        text = f"**Imagem:** `{path}`\n**Tamanho:** {data['size']} bytes\n**Download:** {hub_url}/api/v1/repos/{owner}/{repo}/image?path={path}"
+                        public_url = load_config().get("public_url", PUBLIC_HUB_URL)
+                        text = f"**Imagem:** `{path}`\n**Tamanho:** {data['size']} bytes\n**Download:** {public_url}/api/v1/repos/{owner}/{repo}/image?path={path}"
                     else:
                         trunc = " *(truncado)*" if data.get("truncated") else ""
                         text = f"**Arquivo:** `{path}` ({data['language']}){trunc}\n\n```{data['language']}\n{data['content']}\n```"
@@ -337,14 +339,20 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     text = f"Erro {resp.status_code}: {resp.text[:200]}"
 
             elif name == "download_repo_path":
-                owner = arguments["owner"]
-                repo  = arguments["repo"]
-                path  = arguments.get("path", "")
-                url   = f"{hub_url}/api/v1/repos/{owner}/{repo}/download"
-                if path:
-                    url += f"?path={path}"
-                label = path or repo
-                text  = f"**Download ZIP:** `{label}`\n\nURL direta (válida enquanto o hub estiver online):\n```\n{url}\n```\nUse `curl -L '{url}' -o {label.replace('/', '_')}.zip` para baixar."
+                owner      = arguments["owner"]
+                repo       = arguments["repo"]
+                path       = arguments.get("path", "")
+                # Sempre usa URL pública — hub_url pode ser localhost em alguns clientes
+                public_url = load_config().get("public_url", PUBLIC_HUB_URL)
+                base       = f"{public_url}/api/v1/repos/{owner}/{repo}/download"
+                url        = f"{base}?path={path}" if path else base
+                label      = path or repo
+                filename   = label.replace("/", "_") + ".zip"
+                text       = (
+                    f"**Download ZIP:** `{label}`\n\n"
+                    f"URL pública:\n```\n{url}\n```\n"
+                    f"Baixar agora:\n```bash\ncurl -L '{url}' -o /tmp/{filename} && unzip -o /tmp/{filename} -d /tmp/{label.replace('/', '_')}/\n```"
+                )
 
             else:
                 text = f"Tool desconhecida: {name}"
