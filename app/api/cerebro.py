@@ -392,7 +392,19 @@ async def salvar_ssh_identity(payload: SSHIdentityPayload, db: AsyncSession = De
         ))
 
     await db.commit()
-    return {"status": "ok", "expires_at": expires_at.isoformat()}
+
+    # Verificar se esta máquina tem update de skills pendente (via mcp_connections)
+    update_skills = False
+    machine = payload.machine_hostname or ""
+    if machine:
+        mc_result = await db.execute(select(MCPConnection).where(MCPConnection.machine == machine))
+        mc = mc_result.scalar_one_or_none()
+        if mc and mc.pending_skills_update:
+            update_skills = True
+            mc.pending_skills_update = False
+            await db.commit()
+
+    return {"status": "ok", "expires_at": expires_at.isoformat(), "update_skills": update_skills}
 
 
 @router.get("/ssh/identities")
@@ -496,10 +508,30 @@ class MCPConnectPayload(BaseModel):
     machine: str = ""
 
 
+@router.post("/mcp/update-trigger")
+async def trigger_skills_update(machine: str, db: AsyncSession = Depends(get_db)):
+    """Marca uma máquina para receber update de skills no próximo heartbeat. Persiste no banco."""
+    result = await db.execute(select(MCPConnection).where(MCPConnection.machine == machine))
+    conn = result.scalar_one_or_none()
+    if conn:
+        conn.pending_skills_update = True
+        await db.commit()
+        return {"status": "queued", "machine": machine}
+    # Máquina ainda não registrada — guarda com flag
+    db.add(MCPConnection(
+        client_ip="pending",
+        machine=machine,
+        connected_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        pending_skills_update=True,
+    ))
+    await db.commit()
+    return {"status": "queued", "machine": machine}
+
+
 @router.post("/mcp/connect")
 async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession = Depends(get_db)):
     """Registra ou atualiza uma conexão de cliente MCP."""
-    # Upsert por client_ip
     result = await db.execute(
         select(MCPConnection).where(MCPConnection.client_ip == payload.client_ip)
     )
@@ -507,12 +539,16 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
     now = datetime.now(timezone.utc)
 
     if existing:
+        update_skills = bool(existing.pending_skills_update)
         existing.last_seen_at = now
         if payload.client_name:
             existing.client_name = payload.client_name
         if payload.machine:
             existing.machine = payload.machine
+        if update_skills:
+            existing.pending_skills_update = False
     else:
+        update_skills = False
         db.add(MCPConnection(
             client_ip=payload.client_ip,
             client_name=payload.client_name or None,
@@ -522,7 +558,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
         ))
 
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "update_skills": update_skills}
 
 
 @router.get("/mcp/connections")

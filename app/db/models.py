@@ -163,3 +163,4 @@ class MCPConnection(Base):
     machine: Mapped[str | None] = mapped_column(String(255), nullable=True)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    pending_skills_update: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
