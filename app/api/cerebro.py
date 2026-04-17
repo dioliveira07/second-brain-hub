@@ -571,6 +571,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
             existing.machine = payload.machine
         if update_skills:
             existing.pending_skills_update = False
+            existing.skills_updated_at = now
     else:
         update_skills = False
         db.add(MCPConnection(
@@ -605,6 +606,8 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "last_seen_at": c.last_seen_at.isoformat(),
             "minutos_atras": int((agora - c.last_seen_at).total_seconds() / 60),
             "ativo": (agora - c.last_seen_at).total_seconds() < 28800,  # 8h
+            "skills_updated_at": c.skills_updated_at.isoformat() if c.skills_updated_at else None,
+            "skills_pending": c.pending_skills_update,
         }
         for c in conns
     ]
