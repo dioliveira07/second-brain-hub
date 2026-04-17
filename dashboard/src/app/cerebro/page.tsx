@@ -27,6 +27,8 @@ export type MCPConn = {
   last_seen_at: string;
   minutos_atras: number;
   ativo: boolean;
+  skills_updated_at: string | null;
+  skills_pending: boolean;
 };
 
 export type SSHSession = {

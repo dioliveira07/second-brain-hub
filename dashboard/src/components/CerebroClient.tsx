@@ -502,6 +502,12 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+          {c.skills_pending && (
+            <span style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}44`, color: C.yellow, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>skills↓</span>
+          )}
+          {!c.skills_pending && c.skills_updated_at && (
+            <span title={`Sincronizado: ${c.skills_updated_at}`} style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, color: C.green, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>skills ✓</span>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim }}>
             <Clock size={11} />
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(c.minutos_atras)}</span>
@@ -1008,6 +1014,17 @@ export function CerebroClient({
     return () => clearInterval(id);
   }, [router]);
 
+  const [skillsBroadcasting, setSkillsBroadcasting] = useState(false);
+  async function broadcastSkills() {
+    setSkillsBroadcasting(true);
+    try {
+      await fetch("http://hub.fluxiom.com.br:8010/api/cerebro/mcp/update-trigger/all", { method: "POST" });
+      setTimeout(() => router.refresh(), 1000);
+    } finally {
+      setSkillsBroadcasting(false);
+    }
+  }
+
   const activeMCP  = mcpConns.filter(c => c.ativo);
   const recentSess = sessoes.filter(s => s.minutos_atras < 60);
 
@@ -1190,24 +1207,36 @@ export function CerebroClient({
 
         {/* MCP */}
         {tab === "mcp" && (
-          mcpConns.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum cliente MCP conectado nas últimas 24h.<br />
-              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
-                Bootstrap: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br:8020/sse</code>
-              </span>
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
+              <button
+                onClick={broadcastSkills}
+                disabled={skillsBroadcasting}
+                style={{ background: skillsBroadcasting ? `${C.dim}22` : `${C.cyan}18`, border: `1px solid ${skillsBroadcasting ? C.dim : C.cyan}55`, color: skillsBroadcasting ? C.dim : C.cyan, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: skillsBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+              >
+                <Cpu size={12} />
+                {skillsBroadcasting ? "enviando..." : "atualizar skills"}
+              </button>
             </div>
-          ) : (
-            <Virtuoso
-              style={{ height: "100%" }}
-              data={mcpConns}
-              itemContent={(_, c) => (
-                <div style={{ paddingBottom: "0.6rem" }}>
-                  <MCPConnCard c={c} sshIdentities={sshIdentities} />
-                </div>
-              )}
-            />
-          )
+            {mcpConns.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+                Nenhum cliente MCP conectado nas últimas 24h.<br />
+                <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
+                  Bootstrap: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br:8020/sse</code>
+                </span>
+              </div>
+            ) : (
+              <Virtuoso
+                style={{ flex: 1, minHeight: 0 }}
+                data={mcpConns}
+                itemContent={(_, c) => (
+                  <div style={{ paddingBottom: "0.6rem" }}>
+                    <MCPConnCard c={c} sshIdentities={sshIdentities} />
+                  </div>
+                )}
+              />
+            )}
+          </div>
         )}
 
       </div>

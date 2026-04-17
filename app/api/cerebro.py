@@ -553,6 +553,18 @@ async def trigger_skills_update(machine: str, db: AsyncSession = Depends(get_db)
     return {"status": "queued", "machine": machine}
 
 
+@router.post("/mcp/skills-confirm")
+async def confirm_skills_synced(machine: str, db: AsyncSession = Depends(get_db)):
+    """Registra que a máquina concluiu o sync de skills."""
+    await db.execute(
+        update(MCPConnection)
+        .where(MCPConnection.machine == machine)
+        .values(skills_updated_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
 @router.post("/mcp/update-trigger/all")
 async def trigger_skills_update_all(db: AsyncSession = Depends(get_db)):
     """Marca todas as máquinas conhecidas para receber update de skills no próximo heartbeat."""
