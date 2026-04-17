@@ -1014,18 +1014,23 @@ export function CerebroClient({
     return () => clearInterval(id);
   }, [router]);
 
+  const [localMcpConns, setLocalMcpConns] = useState<MCPConn[]>(mcpConns);
+  useEffect(() => { setLocalMcpConns(mcpConns); }, [mcpConns]);
+
   const [skillsBroadcasting, setSkillsBroadcasting] = useState(false);
   async function broadcastSkills() {
     setSkillsBroadcasting(true);
     try {
-      await fetch("/api/cerebro-proxy?path=/mcp/update-trigger/all", { method: "POST" });
-      setTimeout(() => router.refresh(), 1000);
+      const res = await fetch("/api/cerebro-proxy?path=/mcp/update-trigger/all", { method: "POST" });
+      if (res.ok) {
+        setLocalMcpConns(prev => prev.map(c => ({ ...c, skills_pending: true })));
+      }
     } finally {
       setSkillsBroadcasting(false);
     }
   }
 
-  const activeMCP  = mcpConns.filter(c => c.ativo);
+  const activeMCP  = localMcpConns.filter(c => c.ativo);
   const recentSess = sessoes.filter(s => s.minutos_atras < 60);
 
   // Para o Ops: mapeia dev → sessao mais recente
@@ -1218,7 +1223,7 @@ export function CerebroClient({
                 {skillsBroadcasting ? "enviando..." : "atualizar skills"}
               </button>
             </div>
-            {mcpConns.length === 0 ? (
+            {localMcpConns.length === 0 ? (
               <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
                 Nenhum cliente MCP conectado nas últimas 24h.<br />
                 <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
@@ -1228,7 +1233,7 @@ export function CerebroClient({
             ) : (
               <Virtuoso
                 style={{ flex: 1, minHeight: 0 }}
-                data={mcpConns}
+                data={localMcpConns}
                 itemContent={(_, c) => (
                   <div style={{ paddingBottom: "0.6rem" }}>
                     <MCPConnCard c={c} sshIdentities={sshIdentities} />
