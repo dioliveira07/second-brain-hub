@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
-from sqlalchemy import select, delete, text, or_
+from sqlalchemy import select, delete, text, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -551,6 +551,16 @@ async def trigger_skills_update(machine: str, db: AsyncSession = Depends(get_db)
     ))
     await db.commit()
     return {"status": "queued", "machine": machine}
+
+
+@router.post("/mcp/update-trigger/all")
+async def trigger_skills_update_all(db: AsyncSession = Depends(get_db)):
+    """Marca todas as máquinas conhecidas para receber update de skills no próximo heartbeat."""
+    result = await db.execute(
+        update(MCPConnection).values(pending_skills_update=True)
+    )
+    await db.commit()
+    return {"status": "queued_all", "count": result.rowcount}
 
 
 @router.post("/mcp/connect")
