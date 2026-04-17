@@ -1018,7 +1018,7 @@ export function CerebroClient({
   async function broadcastSkills() {
     setSkillsBroadcasting(true);
     try {
-      await fetch("http://hub.fluxiom.com.br:8010/api/cerebro/mcp/update-trigger/all", { method: "POST" });
+      await fetch("/api/cerebro-proxy?path=/mcp/update-trigger/all", { method: "POST" });
       setTimeout(() => router.refresh(), 1000);
     } finally {
       setSkillsBroadcasting(false);

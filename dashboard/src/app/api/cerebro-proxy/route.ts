@@ -13,3 +13,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "upstream error" }, { status: 502 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  const path = req.nextUrl.searchParams.get("path") ?? "";
+  if (!path) return NextResponse.json({ error: "missing path" }, { status: 400 });
+  try {
+    const body = req.headers.get("content-type")?.includes("application/json")
+      ? await req.text()
+      : undefined;
+    const res = await fetch(`${HUB_URL}/api/cerebro${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch {
+    return NextResponse.json({ error: "upstream error" }, { status: 502 });
+  }
+}
