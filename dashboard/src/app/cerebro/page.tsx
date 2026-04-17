@@ -168,7 +168,7 @@ export default async function CerebroPage() {
   } catch {}
 
   return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "absolute", inset: "1.5rem", overflow: "hidden", display: "flex", flexDirection: "column", borderRadius: "0.75rem" }}>
       <Suspense>
         <CerebroClient
           sessoes={sessoes}
