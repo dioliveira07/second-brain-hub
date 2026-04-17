@@ -856,7 +856,7 @@ function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) 
   const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column", height: 560 }}>
+    <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Header */}
       <div style={{ padding: "0.6rem 1rem", background: "rgba(15,30,55,0.95)", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.75rem", flexShrink: 0 }}>
         <GitBranch size={12} color={C.cyan} />
@@ -920,9 +920,9 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", minHeight: 400 }}>
+    <div style={{ display: "flex", gap: "1rem", height: "100%", minHeight: 0 }}>
       {/* Sidebar */}
-      <div style={{ width: 180, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <div style={{ width: 180, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", height: "100%" }}>
         {/* Devs */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.25rem" }}>Devs</span>
@@ -963,7 +963,7 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
       </div>
 
       {/* Chat */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
         {currentSessao
           ? <ChatView sessao={currentSessao} devName={currentDev?.dev ?? ""} />
           : <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>Selecione um dev</div>
@@ -1032,28 +1032,29 @@ export function CerebroClient({
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 4rem)", overflow: "hidden" }}>
+
       {/* Stats */}
-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "nowrap", flexShrink: 0, marginBottom: "1rem", overflowX: "auto" }}>
         {[
-          { label: "Devs online",          value: sshIdentities.length,                                 icon: <Terminal size={14} />, color: C.green  },
-          { label: "Sessões ativas (1h)",   value: recentSess.length,                                    icon: <Users size={14} />,    color: C.cyan   },
-          { label: "Projetos ativos",        value: [...new Set(sessoes.map(s => s.projeto))].length,    icon: <FileCode size={14} />, color: C.yellow },
-          { label: "Sinais hoje",            value: sinais.filter(s => new Date(s.ts) > new Date(Date.now() - 86400000)).length, icon: <Zap size={14} />, color: C.purple },
-          { label: "Clientes MCP",           value: activeMCP.length,                                    icon: <Wifi size={14} />,     color: C.orange },
+          { label: "Devs online",        value: sshIdentities.length,                                                              icon: <Terminal size={13} />, color: C.green  },
+          { label: "Ativos (1h)",         value: recentSess.length,                                                                 icon: <Users size={13} />,    color: C.cyan   },
+          { label: "Projetos",            value: [...new Set(sessoes.map(s => s.projeto))].length,                                  icon: <FileCode size={13} />, color: C.yellow },
+          { label: "Sinais hoje",         value: sinais.filter(s => new Date(s.ts) > new Date(Date.now() - 86400000)).length,       icon: <Zap size={13} />,      color: C.purple },
+          { label: "MCP",                 value: activeMCP.length,                                                                  icon: <Wifi size={13} />,     color: C.orange },
         ].map(({ label, value, icon, color }) => (
-          <div key={label} style={{ flex: "1 1 150px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0.85rem 1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div key={label} style={{ flex: "1 1 120px", minWidth: 110, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0.65rem 0.85rem", display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <div style={{ color, opacity: 0.8 }}>{icon}</div>
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: "1.3rem", fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-              <div style={{ fontFamily: "var(--sans)", fontSize: "0.72rem", color: C.muted, marginTop: 3 }}>{label}</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "1.15rem", fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+              <div style={{ fontFamily: "var(--sans)", fontSize: "0.65rem", color: C.muted, marginTop: 2 }}>{label}</div>
             </div>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "0.25rem", borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", gap: "0.25rem", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
         {TABS.map(t => (
           <button
             key={t.id}
@@ -1062,8 +1063,8 @@ export function CerebroClient({
               background: tab === t.id ? C.active : "transparent",
               border: "none", borderBottom: `2px solid ${tab === t.id ? C.cyan : "transparent"}`,
               color: tab === t.id ? C.cyan : C.muted,
-              padding: "0.55rem 1rem", cursor: "pointer",
-              fontFamily: "var(--mono)", fontSize: "0.76rem",
+              padding: "0.5rem 0.85rem", cursor: "pointer",
+              fontFamily: "var(--mono)", fontSize: "0.72rem",
               letterSpacing: "0.05em", transition: "all 150ms",
             }}
           >
@@ -1072,122 +1073,144 @@ export function CerebroClient({
         ))}
       </div>
 
-      {/* Devs */}
-      {tab === "devs" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {sshIdentities.length === 0 ? (
+      {/* Tab content — preenche o resto da tela */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", marginTop: "0.75rem" }}>
+
+        {/* Devs — virtual scroll */}
+        {tab === "devs" && (
+          sshIdentities.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum dev identificado no momento.
-              <br />
+              Nenhum dev identificado no momento.<br />
               <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/eu seu-nome</code> para se identificar.</span>
             </div>
           ) : (
-            sshIdentities.map((id, i) => <SSHIdentityCard key={i} id={id} />)
-          )}
-        </div>
-      )}
+            <Virtuoso
+              style={{ height: "100%" }}
+              data={sshIdentities}
+              itemContent={(_, id) => (
+                <div style={{ paddingBottom: "0.6rem" }}>
+                  <SSHIdentityCard id={id} />
+                </div>
+              )}
+            />
+          )
+        )}
 
-      {/* Ops */}
-      {tab === "ops" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          <ConflitosSection conflitos={conflitos} />
-          {sshIdentities.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum dev identificado no momento.
-              <br />
-              <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/eu seu-nome</code> para se identificar.</span>
+        {/* Ops */}
+        {tab === "ops" && (
+          <div style={{ height: "100%", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            <ConflitosSection conflitos={conflitos} />
+            {sshIdentities.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+                Nenhum dev identificado no momento.<br />
+                <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>Use <code>/eu seu-nome</code> para se identificar.</span>
+              </div>
+            ) : (
+              sshIdentities.map((id, i) => <OpsCard key={i} identity={id} sessao={sessaoByDev.get(id.dev)} />)
+            )}
+          </div>
+        )}
+
+        {/* Feed — virtual scroll */}
+        {tab === "feed" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "0.75rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <Zap size={13} color={C.cyan} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Feed de atividade</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>últimos {sinais.length} sinais</span>
             </div>
-          ) : (
-            sshIdentities.map((id, i) => (
-              <OpsCard key={i} identity={id} sessao={sessaoByDev.get(id.dev)} />
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Feed */}
-      {tab === "feed" && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Zap size={13} color={C.cyan} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Feed de atividade</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>últimos {sinais.length} sinais</span>
+            {sinais.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+                Nenhum sinal registrado ainda.
+              </div>
+            ) : (
+              <Virtuoso
+                style={{ flex: 1 }}
+                data={sinais}
+                itemContent={(_, s) => <FeedItem sinal={s} />}
+              />
+            )}
           </div>
-          {sinais.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum sinal registrado ainda.
+        )}
+
+        {/* Scorecard */}
+        {tab === "scorecard" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "0.75rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <Brain size={13} color={C.cyan} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Scorecard — últimos 7 dias</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>commits×5 + skills×2 + edições</span>
             </div>
-          ) : (
-            sinais.map((s, i) => <FeedItem key={i} sinal={s} />)
-          )}
-        </div>
-      )}
-
-      {/* Scorecard */}
-      {tab === "scorecard" && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Brain size={13} color={C.cyan} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Scorecard — últimos 7 dias</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>commits×5 + skills×2 + edições</span>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <ScorecardTable devs={scorecard} />
+            </div>
           </div>
-          <ScorecardTable devs={scorecard} />
-        </div>
-      )}
+        )}
 
-      {/* Afinidade */}
-      {tab === "afinidade" && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Users size={13} color={C.cyan} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Afinidade dev × projeto (30 dias)</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>score ponderado por recência</span>
+        {/* Afinidade */}
+        {tab === "afinidade" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "0.75rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <Users size={13} color={C.cyan} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Afinidade dev × projeto (30 dias)</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>score ponderado por recência</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "1rem" }}>
+              <AfinidadeTable afinidade={afinidade} />
+            </div>
           </div>
-          <div style={{ padding: "1rem" }}>
-            <AfinidadeTable afinidade={afinidade} />
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Padrões */}
-      {tab === "padroes" && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "0.85rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <AlertTriangle size={13} color={C.red} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Padrões de erro (últimos 7 dias)</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>comandos bash que falham recorrentemente</span>
+        {/* Padrões */}
+        {tab === "padroes" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "0.75rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <AlertTriangle size={13} color={C.red} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Padrões de erro (últimos 7 dias)</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: C.dim, marginLeft: "auto" }}>comandos bash que falham recorrentemente</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <PadroesTable padroes={padroes} />
+            </div>
           </div>
-          <PadroesTable padroes={padroes} />
-        </div>
-      )}
+        )}
 
-      {/* Mensagens */}
-      {tab === "mensagens" && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-            <MessageSquare size={13} color={C.cyan} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Prompts por dev e sessão</span>
+        {/* Mensagens */}
+        {tab === "mensagens" && (
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "0.65rem 1rem", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <MessageSquare size={13} color={C.cyan} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Prompts por dev e sessão</span>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, padding: "0.75rem" }}>
+              <MensagensTab mensagens={mensagens} />
+            </div>
           </div>
-          <MensagensTab mensagens={mensagens} />
-        </div>
-      )}
+        )}
 
-      {/* MCP */}
-      {tab === "mcp" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {mcpConns.length === 0 ? (
+        {/* MCP */}
+        {tab === "mcp" && (
+          mcpConns.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-              Nenhum cliente MCP conectado nas últimas 24h.
-              <br />
+              Nenhum cliente MCP conectado nas últimas 24h.<br />
               <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
                 Bootstrap: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br:8020/sse</code>
               </span>
             </div>
           ) : (
-            mcpConns.map((c, i) => <MCPConnCard key={i} c={c} sshIdentities={sshIdentities} />)
-          )}
-        </div>
-      )}
+            <Virtuoso
+              style={{ height: "100%" }}
+              data={mcpConns}
+              itemContent={(_, c) => (
+                <div style={{ paddingBottom: "0.6rem" }}>
+                  <MCPConnCard c={c} sshIdentities={sshIdentities} />
+                </div>
+              )}
+            />
+          )
+        )}
+
+      </div>
     </div>
   );
 }
