@@ -168,19 +168,7 @@ export default async function CerebroPage() {
   } catch {}
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem", maxWidth: 1100 }}>
-      <FadeIn delay={0}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-          <div className="label-accent" style={{ marginBottom: "0.2rem" }}>Contexto</div>
-          <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.6rem", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
-            Cérebro
-          </h2>
-          <p style={{ fontFamily: "var(--sans)", fontSize: "0.85rem", color: "var(--muted-foreground)" }}>
-            Ops em tempo real, feed de atividade, afinidade de devs e clientes MCP
-          </p>
-        </div>
-      </FadeIn>
-
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <Suspense>
         <CerebroClient
           sessoes={sessoes}

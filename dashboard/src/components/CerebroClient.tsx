@@ -1032,7 +1032,7 @@ export function CerebroClient({
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 4rem)", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
       {/* Stats */}
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "nowrap", flexShrink: 0, marginBottom: "1rem", overflowX: "auto" }}>

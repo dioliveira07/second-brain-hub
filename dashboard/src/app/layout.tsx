@@ -32,12 +32,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main
             style={{
               flex:       1,
-              overflowY:  "auto",
-              padding:    "2rem 2.5rem",
+              overflow:   "hidden",
               position:   "relative",
             }}
           >
-            {children}
+            {/* Wrapper com padding e scroll — páginas normais ficam aqui */}
+            <div style={{ padding: "2rem 2.5rem", height: "100%", overflowY: "auto", boxSizing: "border-box" }}>
+              {children}
+            </div>
           </main>
         </div>
       </body>
