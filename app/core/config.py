@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 384
 
     hub_base_url: str = "http://localhost:8010"
+    admin_token: str = ""  # X-Admin-Token para endpoints administrativos
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

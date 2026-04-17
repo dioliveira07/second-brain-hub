@@ -5,20 +5,37 @@ F3: afinidade dev × projeto
 F6: continuidade entre devs (última sessão por projeto)
 """
 import base64
+import hashlib
 import math
 import os
+import secrets
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
-from sqlalchemy import select, delete, text
+from sqlalchemy import select, delete, text, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage
+from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage, LocalDev
 
 router = APIRouter()
+
+
+# ── Admin auth ─────────────────────────────────────────────────────────────────
+
+def require_admin(x_admin_token: str = Header(None)):
+    if not settings.admin_token or x_admin_token != settings.admin_token:
+        raise HTTPException(status_code=403, detail="Token admin inválido")
+
+
+async def get_isolated_owner(dev: str, db: AsyncSession) -> str | None:
+    """Retorna dev.name se dev for LocalDev com isolated=True, senão None."""
+    result = await db.execute(select(LocalDev).where(LocalDev.name == dev))
+    ld = result.scalar_one_or_none()
+    return dev if (ld and ld.isolated) else None
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -56,6 +73,7 @@ class SinalPayload(BaseModel):
 async def salvar_sessao(payload: SessaoPayload, db: AsyncSession = Depends(get_db)):
     """Salva (upsert) snapshot da sessão de um dev em um projeto."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
+    isolated_owner = await get_isolated_owner(payload.dev, db)
 
     result = await db.execute(
         select(SessionContext).where(
@@ -70,6 +88,7 @@ async def salvar_sessao(payload: SessaoPayload, db: AsyncSession = Depends(get_d
         existing.arquivos = payload.arquivos
         existing.ultimo_commit = payload.ultimo_commit
         existing.timestamp = ts
+        existing.isolated_owner = isolated_owner
         existing.updated_at = datetime.now(timezone.utc)
     else:
         db.add(SessionContext(
@@ -79,6 +98,7 @@ async def salvar_sessao(payload: SessaoPayload, db: AsyncSession = Depends(get_d
             arquivos=payload.arquivos,
             ultimo_commit=payload.ultimo_commit,
             timestamp=ts,
+            isolated_owner=isolated_owner,
         ))
 
     await db.commit()
@@ -87,10 +107,10 @@ async def salvar_sessao(payload: SessaoPayload, db: AsyncSession = Depends(get_d
 
 @router.get("/projeto/{projeto}/contexto")
 async def get_contexto_projeto(projeto: str, db: AsyncSession = Depends(get_db)):
-    """Retorna a sessão mais recente (de qualquer dev) no projeto."""
+    """Retorna a sessão mais recente (de qualquer dev não-isolado) no projeto."""
     result = await db.execute(
         select(SessionContext)
-        .where(SessionContext.projeto == projeto)
+        .where(SessionContext.projeto == projeto, SessionContext.isolated_owner.is_(None))
         .order_by(SessionContext.timestamp.desc())
         .limit(1)
     )
@@ -114,9 +134,10 @@ async def get_contexto_projeto(projeto: str, db: AsyncSession = Depends(get_db))
 
 @router.get("/sessoes")
 async def get_todas_sessoes(limit: int = 30, db: AsyncSession = Depends(get_db)):
-    """Retorna todas as sessões recentes de todos os devs e projetos."""
+    """Retorna sessões recentes de devs não-isolados."""
     result = await db.execute(
         select(SessionContext)
+        .where(SessionContext.isolated_owner.is_(None))
         .order_by(SessionContext.timestamp.desc())
         .limit(limit)
     )
@@ -138,11 +159,11 @@ async def get_todas_sessoes(limit: int = 30, db: AsyncSession = Depends(get_db))
 
 @router.get("/sessoes/ativas")
 async def get_sessoes_ativas(janela_minutos: int = 60, db: AsyncSession = Depends(get_db)):
-    """Retorna sessões ativas (com heartbeat nos últimos N minutos)."""
+    """Retorna sessões ativas de devs não-isolados."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=janela_minutos)
     result = await db.execute(
         select(SessionContext)
-        .where(SessionContext.timestamp >= cutoff)
+        .where(SessionContext.timestamp >= cutoff, SessionContext.isolated_owner.is_(None))
         .order_by(SessionContext.timestamp.desc())
     )
     sessoes = result.scalars().all()
@@ -252,12 +273,14 @@ async def get_mensagens(dev: str | None = None, limit: int = 100, db: AsyncSessi
 async def registrar_sinal(payload: SinalPayload, db: AsyncSession = Depends(get_db)):
     """Registra um sinal de atividade (erro, edição, skill)."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
+    isolated_owner = await get_isolated_owner(payload.dev, db)
     db.add(DevSignal(
         tipo=payload.tipo,
         dev=payload.dev,
         projeto=payload.projeto,
         dados=payload.dados,
         ts=ts,
+        isolated_owner=isolated_owner,
     ))
     await db.commit()
     return {"status": "ok"}
@@ -307,6 +330,7 @@ async def get_afinidade_projeto(projeto: str, dias: int = 30, db: AsyncSession =
             DevSignal.projeto == projeto,
             DevSignal.tipo == "arquivo_editado",
             DevSignal.ts >= desde,
+            DevSignal.isolated_owner.is_(None),
         )
     )
     sinais = result.scalars().all()
@@ -917,6 +941,7 @@ async def get_afinidade_geral(dias: int = 30, db: AsyncSession = Depends(get_db)
         select(DevSignal).where(
             DevSignal.tipo == "arquivo_editado",
             DevSignal.ts >= desde,
+            DevSignal.isolated_owner.is_(None),
         )
     )
     sinais = result.scalars().all()
@@ -938,3 +963,108 @@ async def get_afinidade_geral(dias: int = 30, db: AsyncSession = Depends(get_db)
         reverse=True,
     )
     return {"dias": dias, "tabela": tabela}
+
+
+# ── LocalDev Management ────────────────────────────────────────────────────────
+
+class LocalDevCreate(BaseModel):
+    name: str
+    display_name: str | None = None
+    project_scope: list[str] = []
+    isolated: bool = False
+    github_link: str | None = None
+
+
+class SBHBindPayload(BaseModel):
+    sbh_token: str
+    dev: str
+    dev_token: str  # token do LocalDev para validar identidade
+
+
+@router.post("/devs/register", dependencies=[Depends(require_admin)])
+async def registrar_dev_local(payload: LocalDevCreate, db: AsyncSession = Depends(get_db)):
+    """Registra um novo dev local (sem GitHub OAuth). Retorna o token gerado — guarde-o."""
+    existing = await db.execute(select(LocalDev).where(LocalDev.name == payload.name))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Dev '{payload.name}' já existe")
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    db.add(LocalDev(
+        name=payload.name,
+        display_name=payload.display_name,
+        token_hash=token_hash,
+        project_scope=payload.project_scope,
+        isolated=payload.isolated,
+        github_link=payload.github_link,
+    ))
+    await db.commit()
+    return {
+        "status": "created",
+        "dev": payload.name,
+        "isolated": payload.isolated,
+        "token": token,  # único momento em que o token é retornado em plaintext
+    }
+
+
+@router.get("/devs", dependencies=[Depends(require_admin)])
+async def listar_devs_locais(db: AsyncSession = Depends(get_db)):
+    """Lista todos os devs locais registrados."""
+    result = await db.execute(select(LocalDev).order_by(LocalDev.created_at))
+    devs = result.scalars().all()
+    return [
+        {
+            "name": d.name,
+            "display_name": d.display_name,
+            "project_scope": d.project_scope,
+            "isolated": d.isolated,
+            "github_link": d.github_link,
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in devs
+    ]
+
+
+@router.post("/devs/{dev}/token", dependencies=[Depends(require_admin)])
+async def rotacionar_token_dev(dev: str, db: AsyncSession = Depends(get_db)):
+    """Gera novo token para o dev local (invalida o anterior)."""
+    result = await db.execute(select(LocalDev).where(LocalDev.name == dev))
+    ld = result.scalar_one_or_none()
+    if not ld:
+        raise HTTPException(status_code=404, detail=f"Dev '{dev}' não encontrado")
+
+    token = secrets.token_urlsafe(32)
+    ld.token_hash = hashlib.sha256(token.encode()).hexdigest()
+    await db.commit()
+    return {"status": "rotated", "dev": dev, "token": token}
+
+
+@router.post("/devs/auth")
+async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(get_db)):
+    """Valida token de um LocalDev. Usado pelo sbh-auth para vincular sessão."""
+    result = await db.execute(select(LocalDev).where(LocalDev.name == dev))
+    ld = result.scalar_one_or_none()
+    if not ld:
+        raise HTTPException(status_code=401, detail="Dev não encontrado")
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    if not secrets.compare_digest(token_hash, ld.token_hash):
+        raise HTTPException(status_code=401, detail="Token inválido")
+    return {
+        "dev": ld.name,
+        "display_name": ld.display_name,
+        "isolated": ld.isolated,
+        "project_scope": ld.project_scope,
+    }
+
+
+@router.delete("/devs/{dev}", dependencies=[Depends(require_admin)])
+async def remover_dev_local(dev: str, db: AsyncSession = Depends(get_db)):
+    """Remove um LocalDev. Dados de sessão/sinais isolados são preservados."""
+    result = await db.execute(select(LocalDev).where(LocalDev.name == dev))
+    ld = result.scalar_one_or_none()
+    if not ld:
+        raise HTTPException(status_code=404, detail=f"Dev '{dev}' não encontrado")
+    await db.delete(ld)
+    await db.commit()
+    return {"status": "deleted", "dev": dev}

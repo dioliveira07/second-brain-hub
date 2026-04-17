@@ -383,10 +383,11 @@ def run_http(port: int = 8020):
     from starlette.routing import Mount, Route
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-    # Token store em memória — persiste enquanto o container estiver vido
+    # Token store em memória — persiste enquanto o container estiver vivo
     _issued_tokens: set[str] = set()
     _auth_codes: dict[str, str] = {}      # code → redirect_uri (completo)
     _client_ips: dict[str, str] = {}      # client_id → IP do Claude Code
+    _client_devs: dict[str, dict] = {}    # client_id → {dev, dev_token}
 
     BASE_URL = f"http://hub.fluxiom.com.br:{port}"
 
@@ -417,7 +418,7 @@ def run_http(port: int = 8020):
         })
 
     async def oauth_register(request: Request) -> JSONResponse:
-        """Dynamic client registration — armazena IP do Claude Code."""
+        """Dynamic client registration — armazena IP e opcionalmente vincula dev local."""
         try:
             body = await request.json()
         except Exception:
@@ -427,6 +428,13 @@ def run_http(port: int = 8020):
         client_ip = request.headers.get("x-forwarded-for", "")
         client_ip = client_ip.split(",")[0].strip() if client_ip else (request.client.host if request.client else "")
         _client_ips[client_id] = client_ip
+
+        # Vinculação opcional a LocalDev: headers X-SBH-Dev + X-SBH-Token
+        sbh_dev = request.headers.get("x-sbh-dev", "").strip()
+        sbh_token = request.headers.get("x-sbh-token", "").strip()
+        if sbh_dev and sbh_token:
+            _client_devs[client_id] = {"dev": sbh_dev, "dev_token": sbh_token}
+
         return JSONResponse({
             "client_id": client_id,
             "client_secret": "",
@@ -485,19 +493,54 @@ def run_http(port: int = 8020):
 </body></html>""")
 
     async def oauth_token(request: Request) -> JSONResponse:
-        """Troca code por token."""
+        """Troca code por token. Se client_id tiver dev vinculado, valida e registra no hub."""
         form = await request.form()
         code = form.get("code", "")
+        client_id = form.get("client_id", "")
         if code not in _auth_codes:
             return JSONResponse({"error": "invalid_grant"}, status_code=400)
         del _auth_codes[code]
         token = secrets.token_urlsafe(32)
         _issued_tokens.add(token)
+
+        # Se client_id tem dev vinculado, valida token do dev no hub
+        dev_info = _client_devs.pop(client_id, None)
+        if dev_info:
+            hub_url = os.environ.get("HUB_API_URL", "http://localhost:8010")
+            try:
+                import urllib.parse as _up
+                params = _up.urlencode({"dev": dev_info["dev"], "token": dev_info["dev_token"]})
+                import urllib.request as _ur
+                req = _ur.Request(f"{hub_url}/api/cerebro/devs/auth?{params}")
+                resp = _ur.urlopen(req, timeout=5)
+                auth_data = json.loads(resp.read())
+                # Token válido — associa token sbh ao dev para whoami
+                _issued_tokens.discard(token)
+                _issued_tokens.add(token)
+                # Armazena binding em memória para /sbh-auth/whoami
+                if not hasattr(oauth_token, "_token_devs"):
+                    oauth_token._token_devs = {}
+                oauth_token._token_devs[token] = auth_data.get("dev", dev_info["dev"])
+            except Exception:
+                pass  # auth falhou ou hub indisponível — token válido mas sem binding
+
         return JSONResponse({
             "access_token": token,
             "token_type": "bearer",
             "expires_in": 86400 * 365,  # 1 ano
         })
+
+    async def oauth_whoami(request: Request) -> JSONResponse:
+        """Retorna o dev vinculado ao bearer token atual (se houver)."""
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse({"dev": None, "error": "no token"}, status_code=401)
+        token = auth_header.split(" ", 1)[1].strip()
+        if token not in _issued_tokens:
+            return JSONResponse({"dev": None, "error": "unknown token"}, status_code=401)
+        token_devs = getattr(oauth_token, "_token_devs", {})
+        dev = token_devs.get(token)
+        return JSONResponse({"dev": dev, "authenticated": True})
 
     # ── Handler MCP ──────────────────────────────────────────────────────────────
 
@@ -526,6 +569,7 @@ def run_http(port: int = 8020):
             Route("/sbh-auth/register", oauth_register, methods=["POST"]),
             Route("/sbh-auth/authorize", oauth_authorize, methods=["GET"]),
             Route("/sbh-auth/token", oauth_token, methods=["POST"]),
+            Route("/sbh-auth/whoami", oauth_whoami, methods=["GET"]),
             # SSE transport (sem OAuth — para --transport sse)
             Route("/sse", handle_sse),
             Mount("/sse/messages", app=sse_transport.handle_post_message),

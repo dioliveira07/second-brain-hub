@@ -98,6 +98,7 @@ class SessionContext(Base):
     arquivos: Mapped[list] = mapped_column(JSONB, default=list)
     ultimo_commit: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    isolated_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)  # se definido, visível só a este dev
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -112,6 +113,7 @@ class DevSignal(Base):
     projeto: Mapped[str] = mapped_column(String(255), nullable=False)
     dados: Mapped[dict] = mapped_column(JSONB, default=dict)         # payload específico por tipo
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    isolated_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -153,6 +155,21 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
     texto: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    isolated_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class LocalDev(Base):
+    """Dev registrado localmente — sem GitHub OAuth obrigatório."""
+    __tablename__ = "local_devs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA256 hex
+    project_scope: Mapped[list] = mapped_column(JSONB, default=list)  # [] = sem restrição
+    isolated: Mapped[bool] = mapped_column(Boolean, default=False)     # True = invisível em queries cross-dev
+    github_link: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
