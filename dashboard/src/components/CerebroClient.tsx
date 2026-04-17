@@ -70,12 +70,29 @@ function fmtTokens(n: number | null): string {
 
 function CtxBar({ pct }: { pct: number | null }) {
   if (pct == null) return <span style={{ color: C.dim, fontFamily: "var(--mono)", fontSize: "0.7rem" }}>—</span>;
-  const filled = Math.round((pct / 100) * 10);
-  const bar = "▓".repeat(filled) + "░".repeat(10 - filled);
   const color = pct > 80 ? C.red : pct > 60 ? C.yellow : C.green;
   return (
-    <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color }}>
-      ctx {pct}% {bar}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+      <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color, minWidth: "2.2rem", textAlign: "right" }}>
+        {pct}%
+      </span>
+      <span style={{
+        display: "inline-block", width: 64, height: 5,
+        borderRadius: 3, background: "rgba(255,255,255,0.08)",
+        overflow: "hidden", verticalAlign: "middle",
+      }}>
+        <span style={{
+          display: "block", height: "100%",
+          width: `${pct}%`,
+          borderRadius: 3,
+          background: pct > 80
+            ? "linear-gradient(90deg, #f87171, #ef4444)"
+            : pct > 60
+            ? "linear-gradient(90deg, #fbbf24, #f59e0b)"
+            : "linear-gradient(90deg, #34d399, #10b981)",
+          transition: "width 0.4s ease",
+        }} />
+      </span>
     </span>
   );
 }
