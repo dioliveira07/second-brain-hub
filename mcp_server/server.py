@@ -201,6 +201,42 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["owner", "repo"],
             },
         ),
+        types.Tool(
+            name="create_task_progress",
+            description="Cria uma notificação de progresso no Hub com lista de tarefas. Retorna o ID para usar em update_task_progress. Use ao iniciar uma sequência de tarefas para o usuário acompanhar em tempo real.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Título geral da operação (ex: 'Implementando feature X')"},
+                    "tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Lista de tarefas a executar (em ordem)",
+                    },
+                    "projeto": {"type": "string", "description": "Nome do projeto (ex: cotacao-inteligente-crm)", "default": ""},
+                },
+                "required": ["title", "tasks"],
+            },
+        ),
+        types.Tool(
+            name="update_task_progress",
+            description="Marca uma tarefa como concluída (ou com erro) em uma notificação de progresso existente. Chame a cada tarefa concluída para o usuário ver o progresso em tempo real no Hub.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "notification_id": {"type": "string", "description": "ID retornado por create_task_progress"},
+                    "task_index": {"type": "integer", "description": "Índice da tarefa concluída (0-based)"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["done", "error", "running"],
+                        "description": "Novo status da tarefa",
+                        "default": "done",
+                    },
+                    "close": {"type": "boolean", "description": "Se true, marca a notificação como lida (encerrada)", "default": False},
+                },
+                "required": ["notification_id", "task_index"],
+            },
+        ),
     ]
 
 
@@ -353,6 +389,57 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     f"URL pública:\n```\n{url}\n```\n"
                     f"Baixar agora:\n```bash\ncurl -L '{url}' -o /tmp/{filename} && unzip -o /tmp/{filename} -d /tmp/{label.replace('/', '_')}/\n```"
                 )
+
+            elif name == "create_task_progress":
+                title   = arguments["title"]
+                tasks   = arguments["tasks"]
+                projeto = arguments.get("projeto", "")
+                metadata = {
+                    "tasks": [{"title": t, "status": "pending"} for t in tasks],
+                    "projeto": projeto,
+                }
+                resp = await client.post(
+                    f"{hub_url}/api/v1/notifications",
+                    json={"type": "task_progress", "message": title, "repo": projeto or None, "metadata": metadata},
+                    headers=headers,
+                )
+                data = resp.json()
+                task_lines = "\n".join(f"  - [ ] {t}" for t in tasks)
+                text = f"✅ Progresso criado no Hub (id: `{data['id']}`)\n\n**{title}**\n{task_lines}"
+
+            elif name == "update_task_progress":
+                nid        = arguments["notification_id"]
+                task_index = int(arguments["task_index"])
+                status     = arguments.get("status", "done")
+                close      = arguments.get("close", False)
+
+                get_resp = await client.get(f"{hub_url}/api/v1/notifications", headers=headers)
+                notifs   = get_resp.json() if get_resp.status_code == 200 else []
+                notif    = next((n for n in notifs if n["id"] == nid), None)
+                if not notif:
+                    text = f"Notificação `{nid}` não encontrada."
+                else:
+                    metadata = notif.get("metadata") or {}
+                    tasks    = metadata.get("tasks", [])
+                    if 0 <= task_index < len(tasks):
+                        tasks[task_index]["status"] = status
+                    metadata["tasks"] = tasks
+
+                    done_count = sum(1 for t in tasks if t["status"] == "done")
+                    error_count = sum(1 for t in tasks if t["status"] == "error")
+                    summary = f"{done_count}/{len(tasks)} concluídas"
+                    if error_count:
+                        summary += f" ({error_count} com erro)"
+
+                    patch_body: dict = {"metadata": metadata, "message": notif["message"]}
+                    if close:
+                        patch_body["read"] = True
+
+                    await client.patch(f"{hub_url}/api/v1/notifications/{nid}", json=patch_body, headers=headers)
+
+                    icon = {"done": "✅", "error": "❌", "running": "⏳"}.get(status, "•")
+                    task_name = tasks[task_index]["title"] if 0 <= task_index < len(tasks) else f"#{task_index}"
+                    text = f"{icon} `{task_name}` → {status} | {summary}"
 
             else:
                 text = f"Tool desconhecida: {name}"

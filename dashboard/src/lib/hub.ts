@@ -52,6 +52,19 @@ export type Decision = {
   merged_at: string | null;
 };
 
+export type TaskItem = {
+  title: string;
+  status: "pending" | "running" | "done" | "error";
+};
+
+export type TaskNotification = {
+  id: string;
+  message: string;
+  repo: string | null;
+  metadata: { tasks: TaskItem[]; projeto?: string };
+  created_at: string;
+};
+
 export type GraphNode = {
   id: string;
   type: "repo" | "technology" | "developer";

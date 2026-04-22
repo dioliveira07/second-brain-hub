@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Database, Cpu, GitMerge, Bell, Circle, ChevronRight, AlertTriangle, GitBranch } from "lucide-react";
+import { Database, Cpu, GitMerge, Bell, Circle, ChevronRight, AlertTriangle, GitBranch, CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
 import { CountUp }       from "@/components/reactbits/CountUp";
-import type { StatsOverview, Repo } from "@/lib/hub";
+import type { StatsOverview, Repo, TaskNotification, TaskItem } from "@/lib/hub";
 
 type ProjetoAbandono = {
   projeto: string;
@@ -19,11 +19,20 @@ interface Props {
   initialStats: StatsOverview;
   initialRepos: Repo[];
   projetos_abandono?: ProjetoAbandono[];
+  initialTaskNotifications?: TaskNotification[];
 }
 
-export function DashboardLive({ initialStats, initialRepos, projetos_abandono = [] }: Props) {
-  const [stats, setStats] = useState(initialStats);
-  const [repos, setRepos] = useState(initialRepos);
+function TaskIcon({ status }: { status: TaskItem["status"] }) {
+  if (status === "done")    return <CheckCircle2 size={13} color="var(--green)" />;
+  if (status === "error")   return <XCircle      size={13} color="var(--red, #f87171)" />;
+  if (status === "running") return <Loader2      size={13} color="var(--cyan)" style={{ animation: "spin 1s linear infinite" }} />;
+  return <Clock size={13} color="var(--muted-foreground)" />;
+}
+
+export function DashboardLive({ initialStats, initialRepos, projetos_abandono = [], initialTaskNotifications = [] }: Props) {
+  const [stats, setStats]                       = useState(initialStats);
+  const [repos, setRepos]                       = useState(initialRepos);
+  const [taskNotifs, setTaskNotifs]             = useState<TaskNotification[]>(initialTaskNotifications);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -33,14 +42,16 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
       if (cancelled) return;
 
       const hasActive = repos.some(r => r.status === "indexing" || r.status === "queued");
-      const interval  = hasActive ? 4_000 : 30_000;
+      const hasTasks  = taskNotifs.length > 0;
+      const interval  = (hasActive || hasTasks) ? 4_000 : 30_000;
 
       try {
         const res  = await fetch("/painel/api/live-status", { cache: "no-store" });
         const data = await res.json();
-        if (!cancelled && data.repos?.length) {
-          setRepos(data.repos);
-          if (data.stats) setStats(data.stats);
+        if (!cancelled) {
+          if (data.repos?.length) setRepos(data.repos);
+          if (data.stats)         setStats(data.stats);
+          if (data.task_notifications !== undefined) setTaskNotifs(data.task_notifications);
         }
       } catch {}
 
@@ -159,6 +170,79 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
           </div>
         )}
       </div>
+
+      {/* Task progress notifications */}
+      {taskNotifs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Loader2 size={13} color="var(--cyan)" style={{ animation: "spin 1.5s linear infinite" }} />
+            <div className="label-accent" style={{ color: "var(--cyan)" }}>Em execução</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {taskNotifs.map((notif) => {
+              const tasks   = notif.metadata?.tasks ?? [];
+              const done    = tasks.filter(t => t.status === "done").length;
+              const hasErr  = tasks.some(t => t.status === "error");
+              const pct     = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+              return (
+                <div key={notif.id} style={{
+                  padding: "0.9rem 1.1rem", borderRadius: "var(--r)",
+                  background: "rgba(6,182,212,0.04)", border: "1px solid rgba(6,182,212,0.2)",
+                  display: "flex", flexDirection: "column", gap: "0.6rem",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: "var(--text)", flex: 1 }}>
+                      {notif.message}
+                    </span>
+                    <span style={{
+                      fontFamily: "var(--mono)", fontSize: "0.65rem",
+                      color: hasErr ? "var(--red, #f87171)" : "var(--cyan)",
+                      background: hasErr ? "rgba(248,113,113,0.1)" : "rgba(6,182,212,0.1)",
+                      border: `1px solid ${hasErr ? "rgba(248,113,113,0.3)" : "rgba(6,182,212,0.3)"}`,
+                      borderRadius: 4, padding: "1px 7px",
+                    }}>
+                      {pct}%
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 2,
+                      width: `${pct}%`,
+                      background: hasErr ? "var(--red, #f87171)" : "var(--cyan)",
+                      transition: "width 0.4s ease",
+                    }} />
+                  </div>
+
+                  {/* Task list */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                    {tasks.map((task, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <TaskIcon status={task.status} />
+                        <span style={{
+                          fontFamily: "var(--mono)", fontSize: "0.72rem",
+                          color: task.status === "done" ? "var(--muted-foreground)" : task.status === "error" ? "var(--red, #f87171)" : "var(--text)",
+                          textDecoration: task.status === "done" ? "line-through" : "none",
+                          opacity: task.status === "pending" ? 0.5 : 1,
+                        }}>
+                          {task.title}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {notif.repo && (
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--muted-foreground)" }}>
+                      {notif.repo}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Projetos em abandono */}
       {projetos_abandono.length > 0 && (

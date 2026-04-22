@@ -1,4 +1,4 @@
-import { hubFetch, cerebroFetch, StatsOverview, Repo } from "@/lib/hub";
+import { hubFetch, cerebroFetch, StatsOverview, Repo, TaskNotification } from "@/lib/hub";
 import { FadeIn } from "@/components/reactbits/FadeIn";
 import { DashboardLive } from "@/components/DashboardLive";
 
@@ -13,6 +13,7 @@ export default async function HomePage() {
   };
   let repos: Repo[] = [];
   let abandono: ProjetoAbandono[] = [];
+  let taskNotifications: TaskNotification[] = [];
 
   try {
     [stats, repos] = await Promise.all([
@@ -24,6 +25,10 @@ export default async function HomePage() {
   try {
     const ab = await cerebroFetch<{ projetos: ProjetoAbandono[] }>("/projetos/abandono?dias_inativo=3&min_uncommitted=3");
     abandono = ab.projetos ?? [];
+  } catch {}
+
+  try {
+    taskNotifications = await hubFetch<TaskNotification[]>("/notifications?type=task_progress&unread_only=true&limit=10");
   } catch {}
 
   return (
@@ -42,7 +47,12 @@ export default async function HomePage() {
         </div>
       </FadeIn>
 
-      <DashboardLive initialStats={stats} initialRepos={repos} projetos_abandono={abandono} />
+      <DashboardLive
+        initialStats={stats}
+        initialRepos={repos}
+        projetos_abandono={abandono}
+        initialTaskNotifications={taskNotifications}
+      />
     </div>
   );
 }
