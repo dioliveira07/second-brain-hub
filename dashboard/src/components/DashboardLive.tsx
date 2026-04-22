@@ -190,8 +190,8 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
                   background: "rgba(6,182,212,0.04)", border: "1px solid rgba(6,182,212,0.2)",
                   display: "flex", flexDirection: "column", gap: "0.6rem",
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: "var(--text)", flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.8rem", fontWeight: 600, color: "var(--text)", flex: 1, wordBreak: "break-word", overflowWrap: "anywhere", minWidth: 0 }}>
                       {notif.message}
                     </span>
                     <span style={{
@@ -199,7 +199,7 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
                       color: hasErr ? "var(--red, #f87171)" : "var(--cyan)",
                       background: hasErr ? "rgba(248,113,113,0.1)" : "rgba(6,182,212,0.1)",
                       border: `1px solid ${hasErr ? "rgba(248,113,113,0.3)" : "rgba(6,182,212,0.3)"}`,
-                      borderRadius: 4, padding: "1px 7px",
+                      borderRadius: 4, padding: "1px 7px", flexShrink: 0,
                     }}>
                       {pct}%
                     </span>
@@ -218,13 +218,14 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
                   {/* Task list */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                     {tasks.map((task, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                        <TaskIcon status={task.status} />
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem" }}>
+                        <div style={{ flexShrink: 0, marginTop: "1px" }}><TaskIcon status={task.status} /></div>
                         <span style={{
                           fontFamily: "var(--mono)", fontSize: "0.72rem",
                           color: task.status === "done" ? "var(--muted-foreground)" : task.status === "error" ? "var(--red, #f87171)" : "var(--text)",
                           textDecoration: task.status === "done" ? "line-through" : "none",
                           opacity: task.status === "pending" ? 0.5 : 1,
+                          wordBreak: "break-word", overflowWrap: "anywhere", minWidth: 0,
                         }}>
                           {task.title}
                         </span>
@@ -233,7 +234,7 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
                   </div>
 
                   {notif.repo && (
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--muted-foreground)" }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "0.65rem", color: "var(--muted-foreground)", wordBreak: "break-all" }}>
                       {notif.repo}
                     </span>
                   )}

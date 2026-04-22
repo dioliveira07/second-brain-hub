@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage, LocalDev
+from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage, LocalDev, Notification
 
 router = APIRouter()
 
@@ -605,7 +605,25 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
         ))
 
     await db.commit()
-    return {"status": "ok", "update_skills": update_skills}
+
+    # Retorna task_progress ativas para propagação entre máquinas
+    notif_result = await db.execute(
+        select(Notification)
+        .where(Notification.type == "task_progress", Notification.read == False)
+        .order_by(Notification.created_at.desc())
+        .limit(5)
+    )
+    task_notifications = [
+        {
+            "id": str(n.id),
+            "message": n.message,
+            "repo": n.repo,
+            "tasks": (n.extra_data or {}).get("tasks", []),
+        }
+        for n in notif_result.scalars().all()
+    ]
+
+    return {"status": "ok", "update_skills": update_skills, "task_notifications": task_notifications}
 
 
 @router.get("/mcp/connections")
