@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
-from sqlalchemy import select, delete, text, or_, update
+from sqlalchemy import select, delete, text, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -265,6 +265,108 @@ async def get_mensagens(dev: str | None = None, limit: int = 100, db: AsyncSessi
         }
         for d in sorted(devs.values(), key=lambda x: x["dev"])
     ]
+
+
+@router.get("/sessoes-chat")
+async def get_sessoes_chat(
+    dev: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista sessões de chat paginadas, com metadata (sem mensagens)."""
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    # Sessões sem session_id são agrupadas por (dev, dia) em chave sintética.
+    session_key = func.coalesce(
+        ChatMessage.session_id,
+        ChatMessage.dev + "_" + func.to_char(ChatMessage.ts, "YYYYMMDD"),
+    ).label("session_key")
+
+    base = select(
+        session_key,
+        ChatMessage.dev.label("dev"),
+        func.max(ChatMessage.projeto).label("projeto"),
+        func.min(ChatMessage.ts).label("inicio"),
+        func.max(ChatMessage.ts).label("fim"),
+        func.count().label("total"),
+    ).group_by(session_key, ChatMessage.dev)
+
+    if dev:
+        base = base.where(ChatMessage.dev == dev)
+
+    total_q = select(func.count()).select_from(base.subquery())
+    total = (await db.execute(total_q)).scalar() or 0
+
+    rows = (
+        await db.execute(
+            base.order_by(func.max(ChatMessage.ts).desc()).offset(offset).limit(limit)
+        )
+    ).all()
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "sessoes": [
+            {
+                "session_id": r.session_key,
+                "dev": r.dev,
+                "projeto": r.projeto,
+                "inicio": r.inicio.isoformat(),
+                "fim": r.fim.isoformat(),
+                "total": r.total,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/sessoes-chat/{session_id}/mensagens")
+async def get_mensagens_sessao(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Retorna todas as mensagens de uma sessão, em ordem cronológica."""
+    # Chave sintética: <dev>_<YYYYMMDD> (quando session_id original era NULL)
+    synthetic: tuple[str, datetime] | None = None
+    if "_" in session_id:
+        dev_part, _, date_part = session_id.rpartition("_")
+        if dev_part and len(date_part) == 8 and date_part.isdigit():
+            try:
+                day = datetime.strptime(date_part, "%Y%m%d").replace(tzinfo=timezone.utc)
+                synthetic = (dev_part, day)
+            except ValueError:
+                pass
+
+    q = select(ChatMessage)
+    if synthetic:
+        dev_part, day = synthetic
+        q = q.where(
+            ChatMessage.session_id.is_(None),
+            ChatMessage.dev == dev_part,
+            ChatMessage.ts >= day,
+            ChatMessage.ts < day + timedelta(days=1),
+        )
+    else:
+        q = q.where(ChatMessage.session_id == session_id)
+
+    q = q.order_by(ChatMessage.turno.asc(), ChatMessage.ts.asc())
+    msgs = (await db.execute(q)).scalars().all()
+
+    if not msgs:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    return {
+        "session_id": session_id,
+        "dev": msgs[0].dev,
+        "projeto": msgs[0].projeto,
+        "inicio": min(m.ts for m in msgs).isoformat(),
+        "fim": max(m.ts for m in msgs).isoformat(),
+        "total": len(msgs),
+        "mensagens": [
+            {"turno": m.turno, "role": m.role, "texto": m.texto, "ts": m.ts.isoformat()}
+            for m in msgs
+        ],
+    }
 
 
 # ── F2/F3: Sinais ──────────────────────────────────────────────────────────────
