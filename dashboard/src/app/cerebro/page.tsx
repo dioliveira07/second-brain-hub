@@ -104,18 +104,24 @@ export type ChatMensagem = {
   ts: string;
 };
 
-export type ChatSessao = {
+export type SessaoChatMeta = {
   session_id: string;
+  dev: string;
   projeto: string;
   inicio: string;
   fim: string;
-  mensagens: ChatMensagem[];
+  total: number;
 };
 
-export type ChatDev = {
-  dev: string;
+export type SessoesChatResponse = {
   total: number;
-  sessoes: ChatSessao[];
+  offset: number;
+  limit: number;
+  sessoes: SessaoChatMeta[];
+};
+
+export type ChatSessaoDetalhe = SessaoChatMeta & {
+  mensagens: ChatMensagem[];
 };
 
 export default async function CerebroPage() {
@@ -127,7 +133,7 @@ export default async function CerebroPage() {
   let padroes: PadraoGlobal[] = [];
   let scorecard: ScorecardDev[] = [];
   let conflitos: Conflito[] = [];
-  let mensagens: ChatDev[] = [];
+  let sessoesChat: SessoesChatResponse = { total: 0, offset: 0, limit: 50, sessoes: [] };
 
   try {
     sessoes = await cerebroFetch<Sessao[]>("/sessoes?limit=50");
@@ -166,7 +172,7 @@ export default async function CerebroPage() {
   } catch {}
 
   try {
-    mensagens = await cerebroFetch<ChatDev[]>("/mensagens?limit=200");
+    sessoesChat = await cerebroFetch<SessoesChatResponse>("/sessoes-chat?limit=50");
   } catch {}
 
   return (
@@ -181,7 +187,7 @@ export default async function CerebroPage() {
           padroes={padroes}
           scorecard={scorecard}
           conflitos={conflitos}
-          mensagens={mensagens}
+          sessoesChat={sessoesChat}
         />
       </Suspense>
     </div>

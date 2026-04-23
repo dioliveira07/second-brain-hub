@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Virtuoso } from "react-virtuoso";
@@ -8,7 +8,7 @@ import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
   ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu, MessageSquare,
 } from "lucide-react";
-import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito, ChatDev, ChatSessao } from "@/app/cerebro/page";
+import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito, SessoesChatResponse, SessaoChatMeta, ChatSessaoDetalhe } from "@/app/cerebro/page";
 
 const C = {
   bg:      "rgba(10,22,40,0.6)",
@@ -857,7 +857,7 @@ function ChatBubble({ m, devName }: { m: { role: string; turno: number; texto: s
   );
 }
 
-function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) {
+function ChatView({ sessao, devName }: { sessao: ChatSessaoDetalhe; devName: string }) {
   const proj = sessao.projeto.split("/").pop() || sessao.projeto;
   const inicio = new Date(sessao.inicio).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -887,11 +887,37 @@ function ChatView({ sessao, devName }: { sessao: ChatSessao; devName: string }) 
   );
 }
 
-function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
+const PAGE_SIZE = 50;
+
+function MensagensTab({ initialData }: { initialData: SessoesChatResponse }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [sessoes, setSessoes] = useState<SessaoChatMeta[]>(initialData.sessoes);
+  const [total, setTotal] = useState<number>(initialData.total);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedDev, setSelectedDev] = useState<string | null>(searchParams.get("dev"));
   const [selectedSessao, setSelectedSessao] = useState<string | null>(searchParams.get("sessao"));
+  const [detailCache, setDetailCache] = useState<Record<string, ChatSessaoDetalhe>>({});
+  const [detailLoading, setDetailLoading] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const byDev = useMemo(() => {
+    const m = new Map<string, SessaoChatMeta[]>();
+    for (const s of sessoes) {
+      const list = m.get(s.dev) ?? [];
+      list.push(s);
+      m.set(s.dev, list);
+    }
+    return m;
+  }, [sessoes]);
+
+  const devs = useMemo(() => Array.from(byDev.keys()).sort(), [byDev]);
+  const currentDev = selectedDev && byDev.has(selectedDev) ? selectedDev : devs[0];
+  const currentDevSessoes = currentDev ? byDev.get(currentDev) ?? [] : [];
+  const currentSessaoMeta =
+    (selectedSessao && currentDevSessoes.find(s => s.session_id === selectedSessao)) ||
+    currentDevSessoes[0] ||
+    null;
 
   function selectDev(dev: string) {
     setSelectedDev(dev);
@@ -909,13 +935,51 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
     router.replace(`?${p.toString()}`, { scroll: false });
   }
 
-  const devs = mensagens.map(d => d.dev);
-  const currentDev = mensagens.find(d => d.dev === (selectedDev ?? devs[0])) ?? null;
-  const currentSessao = currentDev
-    ? (selectedSessao ? currentDev.sessoes.find(s => s.session_id === selectedSessao) : currentDev.sessoes[0]) ?? null
-    : null;
+  async function loadMore() {
+    if (loadingMore || sessoes.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const path = `/sessoes-chat?offset=${sessoes.length}&limit=${PAGE_SIZE}`;
+      const res = await fetch(`/api/cerebro-proxy?path=${encodeURIComponent(path)}`);
+      if (!res.ok) return;
+      const data: SessoesChatResponse = await res.json();
+      setSessoes(prev => {
+        const seen = new Set(prev.map(s => s.session_id));
+        return [...prev, ...data.sessoes.filter(s => !seen.has(s.session_id))];
+      });
+      setTotal(data.total);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
-  if (mensagens.length === 0) {
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const ob = new IntersectionObserver(
+      entries => { if (entries[0]?.isIntersecting) loadMore(); },
+      { rootMargin: "200px" },
+    );
+    ob.observe(el);
+    return () => ob.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessoes.length, total, loadingMore]);
+
+  useEffect(() => {
+    if (!currentSessaoMeta) return;
+    const sid = currentSessaoMeta.session_id;
+    if (detailCache[sid] || detailLoading === sid) return;
+    setDetailLoading(sid);
+    const path = `/sessoes-chat/${encodeURIComponent(sid)}/mensagens`;
+    fetch(`/api/cerebro-proxy?path=${encodeURIComponent(path)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: ChatSessaoDetalhe | null) => {
+        if (data) setDetailCache(prev => ({ ...prev, [sid]: data }));
+      })
+      .finally(() => setDetailLoading(prev => (prev === sid ? null : prev)));
+  }, [currentSessaoMeta?.session_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (sessoes.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
         Nenhuma mensagem registrada ainda.
@@ -925,54 +989,66 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
     );
   }
 
+  const currentDetail = currentSessaoMeta ? detailCache[currentSessaoMeta.session_id] : null;
+  const isLoadingDetail = currentSessaoMeta && detailLoading === currentSessaoMeta.session_id;
+
   return (
     <div style={{ display: "flex", gap: "1rem", height: "100%", minHeight: 0 }}>
       {/* Sidebar */}
-      <div style={{ width: 180, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", height: "100%" }}>
-        {/* Devs */}
+      <div style={{ width: 200, flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.75rem", overflowY: "auto", height: "100%" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.25rem" }}>Devs</span>
           {devs.map(dev => {
-            const d = mensagens.find(x => x.dev === dev)!;
-            const active = (selectedDev ?? devs[0]) === dev;
+            const list = byDev.get(dev)!;
+            const totalMsg = list.reduce((a, s) => a + s.total, 0);
+            const active = currentDev === dev;
             return (
               <button key={dev} onClick={() => selectDev(dev)}
                 style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.45rem 0.65rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
                 <Avatar name={dev} size={22} />
                 <div>
                   <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: active ? C.cyan : C.text }}>{dev}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{d.total} msg</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{list.length} sessões · {totalMsg} msg</div>
                 </div>
               </button>
             );
           })}
         </div>
 
-        {/* Sessões do dev selecionado */}
-        {currentDev && currentDev.sessoes.length > 1 && (
+        {currentDev && currentDevSessoes.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0.25rem" }}>Sessões</span>
-            {currentDev.sessoes.map((s, i) => {
-              const active = (selectedSessao ?? currentDev.sessoes[0].session_id) === s.session_id;
+            {currentDevSessoes.map(s => {
+              const active = currentSessaoMeta?.session_id === s.session_id;
               const proj = s.projeto.split("/").pop() || s.projeto;
               const hora = new Date(s.fim).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
               return (
-                <button key={i} onClick={() => selectSessao(s.session_id)}
+                <button key={s.session_id} onClick={() => selectSessao(s.session_id)}
                   style={{ background: active ? C.active : "transparent", border: `1px solid ${active ? C.cyan : C.border}`, borderRadius: 6, padding: "0.4rem 0.65rem", cursor: "pointer", textAlign: "left" }}>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: active ? C.cyan : C.text }}>{proj}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora} · {s.mensagens.length}msg</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.68rem", color: active ? C.cyan : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: C.dim }}>{hora} · {s.total}msg</div>
                 </button>
               );
             })}
           </div>
         )}
+
+        <div ref={sentinelRef} style={{ padding: "0.5rem 0.25rem", textAlign: "center", fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim }}>
+          {sessoes.length >= total
+            ? <span style={{ opacity: 0.6 }}>— fim ({total} sessões) —</span>
+            : loadingMore
+              ? "carregando..."
+              : <span style={{ opacity: 0.5 }}>{sessoes.length}/{total}</span>}
+        </div>
       </div>
 
       {/* Chat */}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-        {currentSessao
-          ? <ChatView sessao={currentSessao} devName={currentDev?.dev ?? ""} />
-          : <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>Selecione um dev</div>
+        {currentDetail
+          ? <ChatView sessao={currentDetail} devName={currentDev ?? ""} />
+          : <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
+              {isLoadingDetail ? "carregando mensagens..." : currentSessaoMeta ? " " : "Selecione um dev"}
+            </div>
         }
       </div>
     </div>
@@ -984,7 +1060,7 @@ function MensagensTab({ mensagens }: { mensagens: ChatDev[] }) {
 type Tab = "ops" | "devs" | "feed" | "scorecard" | "afinidade" | "padroes" | "mcp" | "mensagens";
 
 export function CerebroClient({
-  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes, scorecard, conflitos, mensagens,
+  sessoes, afinidade, mcpConns, sshIdentities, sinais, padroes, scorecard, conflitos, sessoesChat,
 }: {
   sessoes: Sessao[];
   afinidade: AfinidadeItem[];
@@ -994,7 +1070,7 @@ export function CerebroClient({
   padroes: PadraoGlobal[];
   scorecard: ScorecardDev[];
   conflitos: Conflito[];
-  mensagens: ChatDev[];
+  sessoesChat: SessoesChatResponse;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1050,7 +1126,7 @@ export function CerebroClient({
     { id: "afinidade",label: "Afinidade" },
     { id: "padroes",  label: `Padrões (${padroes.length})` },
     { id: "mcp",      label: `MCP (${activeMCP.length})` },
-    { id: "mensagens",label: `Mensagens (${mensagens.reduce((a, d) => a + d.total, 0)})` },
+    { id: "mensagens",label: `Mensagens (${sessoesChat.total})` },
   ];
 
   return (
@@ -1205,7 +1281,7 @@ export function CerebroClient({
               <span style={{ fontFamily: "var(--mono)", fontSize: "0.78rem", color: C.text }}>Prompts por dev e sessão</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, padding: "0.75rem" }}>
-              <MensagensTab mensagens={mensagens} />
+              <MensagensTab initialData={sessoesChat} />
             </div>
           </div>
         )}
