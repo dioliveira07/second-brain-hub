@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
+
+const PROXY = (process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/api/cerebro-proxy";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Virtuoso } from "react-virtuoso";
@@ -940,7 +942,7 @@ function MensagensTab({ initialData }: { initialData: SessoesChatResponse }) {
     setLoadingMore(true);
     try {
       const path = `/sessoes-chat?offset=${sessoes.length}&limit=${PAGE_SIZE}`;
-      const res = await fetch(`/api/cerebro-proxy?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`${PROXY}?path=${encodeURIComponent(path)}`);
       if (!res.ok) return;
       const data: SessoesChatResponse = await res.json();
       setSessoes(prev => {
@@ -971,7 +973,7 @@ function MensagensTab({ initialData }: { initialData: SessoesChatResponse }) {
     if (detailCache[sid] || detailLoading === sid) return;
     setDetailLoading(sid);
     const path = `/sessoes-chat/${encodeURIComponent(sid)}/mensagens`;
-    fetch(`/api/cerebro-proxy?path=${encodeURIComponent(path)}`)
+    fetch(`${PROXY}?path=${encodeURIComponent(path)}`)
       .then(r => (r.ok ? r.json() : null))
       .then((data: ChatSessaoDetalhe | null) => {
         if (data) setDetailCache(prev => ({ ...prev, [sid]: data }));
@@ -1097,7 +1099,7 @@ export function CerebroClient({
   async function broadcastSkills() {
     setSkillsBroadcasting(true);
     try {
-      const res = await fetch("/api/cerebro-proxy?path=/mcp/update-trigger/all", { method: "POST" });
+      const res = await fetch(`${PROXY}?path=/mcp/update-trigger/all`, { method: "POST" });
       if (res.ok) {
         setLocalMcpConns(prev => prev.map(c => ({ ...c, skills_pending: true })));
       }
