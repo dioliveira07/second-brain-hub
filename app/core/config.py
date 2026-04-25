@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     hub_base_url: str = "http://localhost:8010"
     admin_token: str = ""  # X-Admin-Token para endpoints administrativos
+    hub_api_key: str = ""  # X-Hub-Key — obrigatório para requests externos
+    hub_auth_audit: bool = True  # True=loga sem bloquear, False=enforce
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -725,7 +725,13 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
         for n in notif_result.scalars().all()
     ]
 
-    return {"status": "ok", "update_skills": update_skills, "task_notifications": task_notifications}
+    # Distribuir chave para máquinas já registradas (bootstrap seguro)
+    # Só retorna para máquinas conhecidas (existing); novas precisam de onboarding manual
+    hub_key = settings.hub_api_key if (existing and settings.hub_api_key) else None
+
+    return {"status": "ok", "update_skills": update_skills,
+            "task_notifications": task_notifications,
+            **({"hub_api_key": hub_key} if hub_key else {})}
 
 
 @router.get("/mcp/connections")
@@ -1201,6 +1207,22 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
         "isolated": ld.isolated,
         "project_scope": ld.project_scope,
     }
+
+
+@router.get("/security/audit-log")
+async def get_audit_log(limit: int = 100):
+    """Retorna as últimas entradas do audit log de autenticação."""
+    from app.main import _audit_log
+    entries = list(_audit_log)[-limit:]
+    entries.reverse()
+    return {"entries": entries, "total": len(_audit_log), "mode": "audit" if settings.hub_auth_audit else "enforce"}
+
+
+@router.post("/security/enforce", dependencies=[Depends(require_admin)])
+async def set_enforce_mode():
+    """Muda de audit para enforce (irreversível via API — requer .env para desfazer)."""
+    settings.hub_auth_audit = False
+    return {"status": "enforcing"}
 
 
 @router.delete("/devs/{dev}", dependencies=[Depends(require_admin)])
