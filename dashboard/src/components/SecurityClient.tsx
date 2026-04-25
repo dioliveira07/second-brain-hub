@@ -190,8 +190,21 @@ export function SecurityClient({
           </div>
           <div style={{ overflowY: "auto", maxHeight: 480 }}>
             {conns.map((c, i) => {
-              const hasActivity = log.entries.some(e => e.ip === c.client_ip);
-              const allAuthenticated = !log.entries.some(e => e.ip === c.client_ip && !e.key_present);
+              // Só tem dados reais se a máquina conectou APÓS o restart do hub
+              const seenAfterRestart = new Date(c.last_seen_at) > new Date((log as any).hub_started_at);
+              const hasUnauth = log.entries.some(e => e.ip === c.client_ip && !e.key_present);
+              const hasAuth   = log.entries.some(e => e.ip === c.client_ip && e.key_present);
+
+              let statusEl;
+              if (!seenAfterRestart) {
+                statusEl = <span style={{ color: C.dim }}>sem dados</span>;
+              } else if (hasUnauth) {
+                statusEl = <span style={{ color: C.red }}>⚠ sem chave</span>;
+              } else if (hasAuth) {
+                statusEl = <span style={{ color: C.green }}>✓ autenticada</span>;
+              } else {
+                statusEl = <span style={{ color: C.dim }}>aguardando...</span>;
+              }
               return (
                 <div key={i} style={{
                   padding: "12px 16px",
@@ -203,11 +216,7 @@ export function SecurityClient({
                       : <WifiOff size={13} color={C.dim} />}
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{c.machine || c.client_name || c.client_ip}</span>
                     <span style={{ marginLeft: "auto", fontSize: 11 }}>
-                      {!hasActivity
-                        ? <span style={{ color: C.green }}>✓ ok</span>
-                        : allAuthenticated
-                          ? <span style={{ color: C.green }}>✓ autenticada</span>
-                          : <span style={{ color: C.red }}>⚠ sem chave</span>}
+                      {statusEl}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>

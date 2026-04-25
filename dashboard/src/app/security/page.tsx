@@ -16,6 +16,7 @@ export type AuditLog = {
   entries: AuditEntry[];
   total: number;
   mode: "audit" | "enforce";
+  hub_started_at: string;
 };
 
 export type MCPConn = {

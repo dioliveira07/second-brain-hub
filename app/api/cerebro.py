@@ -1212,10 +1212,12 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
 @router.get("/security/audit-log")
 async def get_audit_log(limit: int = 100):
     """Retorna as últimas entradas do audit log de autenticação."""
-    from app.main import _audit_log
+    from app.main import _audit_log, _hub_started_at
     entries = list(_audit_log)[-limit:]
     entries.reverse()
-    return {"entries": entries, "total": len(_audit_log), "mode": "audit" if settings.hub_auth_audit else "enforce"}
+    return {"entries": entries, "total": len(_audit_log),
+            "mode": "audit" if settings.hub_auth_audit else "enforce",
+            "hub_started_at": _hub_started_at}
 
 
 @router.post("/security/enforce", dependencies=[Depends(require_admin)])

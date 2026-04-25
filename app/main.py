@@ -18,6 +18,7 @@ logger = logging.getLogger("hub.auth")
 # ── Audit log em memória (últimas 500 entradas) ───────────────────────────────
 from collections import deque
 _audit_log: deque = deque(maxlen=500)
+_hub_started_at: str = datetime.now(timezone.utc).isoformat()
 
 _INTERNAL_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),   # Docker bridge
