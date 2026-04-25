@@ -21,6 +21,7 @@ export type AuditLog = {
 
 export type MCPConn = {
   client_ip: string;
+  real_ip: string | null;
   client_name: string | null;
   machine: string | null;
   connected_at: string;

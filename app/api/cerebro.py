@@ -12,7 +12,7 @@ import secrets
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete, text, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -687,8 +687,9 @@ async def trigger_skills_update_all(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/mcp/connect")
-async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession = Depends(get_db)):
+async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request, db: AsyncSession = Depends(get_db)):
     """Registra ou atualiza uma conexão de cliente MCP."""
+    real_ip = request.client.host if request.client else None
     result = await db.execute(
         select(MCPConnection).where(MCPConnection.client_ip == payload.client_ip)
     )
@@ -698,6 +699,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
     if existing:
         update_skills = bool(existing.pending_skills_update)
         existing.last_seen_at = now
+        existing.real_ip = real_ip
         if payload.client_name:
             existing.client_name = payload.client_name
         if payload.machine:
@@ -711,6 +713,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, db: AsyncSession 
             client_ip=payload.client_ip,
             client_name=payload.client_name or None,
             machine=payload.machine or None,
+            real_ip=real_ip,
             connected_at=now,
             last_seen_at=now,
         ))
@@ -765,6 +768,7 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "ativo": (agora - c.last_seen_at).total_seconds() < 28800,  # 8h
             "skills_updated_at": c.skills_updated_at.isoformat() if c.skills_updated_at else None,
             "skills_pending": c.pending_skills_update,
+            "real_ip": c.real_ip,
         }
         for c in conns
     ]
@@ -1216,6 +1220,21 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
         "isolated": ld.isolated,
         "project_scope": ld.project_scope,
     }
+
+
+@router.get("/hooks/http-py")
+async def get_http_py():
+    """Serve o conteúdo atual de _http.py para auto-update sem depender de git."""
+    import hashlib
+    skills_path = os.path.expanduser("~/skills/hooks/_http.py")
+    try:
+        content = open(skills_path).read()
+        return {
+            "content": content,
+            "hash": hashlib.sha256(content.encode()).hexdigest()[:16],
+        }
+    except Exception:
+        raise HTTPException(status_code=404, detail="_http.py não disponível")
 
 
 @router.get("/security/audit-log")

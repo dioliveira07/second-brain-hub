@@ -193,8 +193,9 @@ export function SecurityClient({
             {conns.map((c, i) => {
               // Só tem dados reais se a máquina conectou APÓS o restart do hub
               const seenAfterRestart = new Date(c.last_seen_at) > new Date((log as any).hub_started_at);
-              const hasUnauth = log.entries.some(e => e.ip === c.client_ip && !e.key_present);
-              const hasAuth   = log.entries.some(e => e.ip === c.client_ip && e.key_present);
+              const ips = [c.client_ip, c.real_ip].filter(Boolean);
+              const hasUnauth = log.entries.some(e => ips.includes(e.ip) && !e.key_present);
+              const hasAuth   = log.entries.some(e => ips.includes(e.ip) && e.key_present);
 
               let statusEl;
               if (!seenAfterRestart) {
@@ -204,7 +205,7 @@ export function SecurityClient({
               } else if (hasAuth) {
                 statusEl = <span style={{ color: C.green }}>✓ autenticada</span>;
               } else {
-                statusEl = <span style={{ color: C.dim }}>aguardando...</span>;
+                statusEl = <span style={{ color: C.cyan }}>✓ rede interna</span>;
               }
               return (
                 <div key={i} style={{

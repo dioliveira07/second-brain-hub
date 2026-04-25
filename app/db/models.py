@@ -185,3 +185,4 @@ class MCPConnection(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     pending_skills_update: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     skills_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    real_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)  # IP real do TCP (vs client_ip auto-reportado)
