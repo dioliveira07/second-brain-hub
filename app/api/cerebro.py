@@ -211,6 +211,15 @@ async def get_sessoes_projeto(projeto: str, limit: int = 10, db: AsyncSession = 
 async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depends(get_db)):
     """Registra o prompt enviado pelo dev em uma sessão Claude Code. Ignora duplicatas."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
+    existing = await db.execute(
+        select(ChatMessage).where(
+            ChatMessage.session_id == payload.session_id,
+            ChatMessage.turno == payload.turno,
+            ChatMessage.role == payload.role,
+        ).limit(1)
+    )
+    if existing.scalar_one_or_none():
+        return {"status": "duplicate"}
     db.add(ChatMessage(
         session_id=payload.session_id,
         dev=payload.dev,
