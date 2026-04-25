@@ -1222,19 +1222,19 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
     }
 
 
-@router.get("/hooks/http-py")
-async def get_http_py():
-    """Serve o conteúdo atual de _http.py para auto-update sem depender de git."""
+@router.get("/hooks/{filename}")
+async def get_hook_file(filename: str):
+    """Serve hooks críticos para auto-update sem depender de git."""
     import hashlib
-    skills_path = os.path.expanduser("~/skills/hooks/_http.py")
+    allowed = {"_http.py": "~/skills/hooks/_http.py",
+               "cerebro_loader.py": "~/skills/cerebro_loader.py"}
+    if filename not in allowed:
+        raise HTTPException(status_code=404, detail="Arquivo não disponível")
     try:
-        content = open(skills_path).read()
-        return {
-            "content": content,
-            "hash": hashlib.sha256(content.encode()).hexdigest()[:16],
-        }
+        content = open(os.path.expanduser(allowed[filename])).read()
+        return {"content": content, "hash": hashlib.sha256(content.encode()).hexdigest()[:16], "filename": filename}
     except Exception:
-        raise HTTPException(status_code=404, detail="_http.py não disponível")
+        raise HTTPException(status_code=404, detail=f"{filename} não disponível")
 
 
 @router.get("/security/audit-log")
