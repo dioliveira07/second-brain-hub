@@ -43,7 +43,7 @@ export function SecurityClient({
 
   const refresh = async () => {
     try {
-      const base = (process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/api/cerebro-proxy";
+      const base = "/painel/api/cerebro-proxy";
       const [l, c] = await Promise.all([
         fetch(`${base}?path=${encodeURIComponent("/security/audit-log?limit=200")}`).then(r => r.json()),
         fetch(`${base}?path=/mcp/connections`).then(r => r.json()),

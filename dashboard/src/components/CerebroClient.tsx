@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
 
-const PROXY = (process.env.NEXT_PUBLIC_BASE_PATH ?? "") + "/api/cerebro-proxy";
+const PROXY = "/painel/api/cerebro-proxy";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Virtuoso } from "react-virtuoso";
