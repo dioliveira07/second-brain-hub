@@ -6,6 +6,7 @@ F6: continuidade entre devs (última sessão por projeto)
 """
 import base64
 import hashlib
+import logging
 import math
 import os
 import secrets

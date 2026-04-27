@@ -1,6 +1,7 @@
 from celery import Celery
 from celery.schedules import crontab
 from app.core.config import settings
+from app.db.session import engine, async_session
 
 celery_app = Celery(
     "second_brain_hub",
@@ -31,14 +32,10 @@ celery_app.conf.update(
 def heartbeat_check():
     """Verifica: PRs sem review, conflitos de dep, docs desatualizados."""
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from app.db.models import IndexedRepo, Notification
 
     async def run():
-        engine = create_async_engine(settings.database_url, echo=False)
-        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-        async with session_factory() as db:
+        async with async_session() as db:
             notifications = []
 
             # Verifica repos indexados e gera notificações
@@ -79,7 +76,6 @@ def heartbeat_check():
             if notifications:
                 await db.commit()
 
-        await engine.dispose()
         return len(notifications)
 
     return asyncio.run(run())
@@ -117,15 +113,11 @@ async def _check_stale_prs(full_name: str, stale_days: int = 3) -> list[dict]:
 def refresh_all_permissions():
     """Atualiza permissões de todos os usuários via GitHub API."""
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from app.db.models import User
     from app.core.security import decrypt_token, get_github_user_repos
 
     async def run():
-        engine = create_async_engine(settings.database_url, echo=False)
-        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-        async with session_factory() as db:
+        async with async_session() as db:
             from sqlalchemy import select
             result = await db.execute(select(User))
             users = result.scalars().all()
@@ -143,7 +135,6 @@ def refresh_all_permissions():
             if updated:
                 await db.commit()
 
-        await engine.dispose()
         return updated
 
     return asyncio.run(run())
@@ -153,15 +144,11 @@ def refresh_all_permissions():
 def index_repo_task(github_full_name: str, changed_files: list | None = None):
     """Task assíncrona para indexar um repo. Se changed_files for passado, reindexar só esses."""
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from app.services.indexing_pipeline import index_repo
 
     async def run():
-        engine = create_async_engine(settings.database_url, echo=False)
-        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-        async with session_factory() as db:
+        async with async_session() as db:
             result = await index_repo(github_full_name, db, changed_files=changed_files)
-        await engine.dispose()
         return result
 
     return asyncio.run(run())

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 
 
 class Settings(BaseSettings):
@@ -38,6 +39,19 @@ class Settings(BaseSettings):
     hub_signing_key_path: str = "/root/.hub-signing-key"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        if self.hub_env == "production":
+            if self.secret_key == "change-me-in-production":
+                raise ValueError("SECRET_KEY deve ser configurado em produção (openssl rand -hex 32)")
+            if len(self.secret_key) < 32:
+                raise ValueError("SECRET_KEY deve ter pelo menos 32 caracteres")
+            if not self.hub_api_key:
+                raise ValueError("HUB_API_KEY obrigatório em produção")
+            if not self.admin_token:
+                raise ValueError("ADMIN_TOKEN obrigatório em produção")
+        return self
 
 
 settings = Settings()
