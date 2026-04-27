@@ -26,11 +26,14 @@ router = APIRouter()
 
 # ── Admin auth ─────────────────────────────────────────────────────────────────
 
-def require_admin(x_admin_token: str = Header(None)):
+def require_admin(request: Request, x_admin_token: str = Header(None)):
     if not settings.admin_token or not x_admin_token:
+        logging.getLogger("hub.auth").warning("[ADMIN] Tentativa sem token — %s %s", request.method, request.url.path)
         raise HTTPException(status_code=403, detail="Token admin inválido")
     if not secrets.compare_digest(x_admin_token, settings.admin_token):
+        logging.getLogger("hub.auth").warning("[ADMIN] Token inválido — %s %s ip=%s", request.method, request.url.path, request.client.host if request.client else "?")
         raise HTTPException(status_code=403, detail="Token admin inválido")
+    logging.getLogger("hub.auth").info("[ADMIN] Ação autorizada — %s %s ip=%s", request.method, request.url.path, request.client.host if request.client else "?")
 
 
 async def get_isolated_owner(dev: str, db: AsyncSession) -> str | None:
@@ -410,6 +413,7 @@ async def get_padroes(projeto: str, dias: int = 7, min_ocorrencias: int = 3, db:
             DevSignal.projeto == projeto,
             DevSignal.tipo == "erro_bash",
             DevSignal.ts >= desde,
+            DevSignal.isolated_owner.is_(None),
         )
     )
     sinais = result.scalars().all()

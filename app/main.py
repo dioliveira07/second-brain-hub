@@ -1,6 +1,7 @@
 import asyncio
 import ipaddress
 import logging
+import secrets
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -120,7 +121,7 @@ async def hub_auth_middleware(request: Request, call_next):
 
     # Validar X-Hub-Key
     key = request.headers.get("X-Hub-Key", "")
-    if settings.hub_api_key and key == settings.hub_api_key:
+    if settings.hub_api_key and key and secrets.compare_digest(key, settings.hub_api_key):
         client_ip = request.client.host if request.client else ""
         now = datetime.now(timezone.utc)
         last = _auth_success.get(client_ip)
