@@ -1339,6 +1339,8 @@ _files = [
     ("prompt_mcp_heartbeat.py", HOOKS / "prompt_mcp_heartbeat.py",   True),
     ("_http.py",                HOOKS / "_http.py",                   True),
     ("cerebro_loader.py",       CLAUDE / "cerebro_loader.py",         False),
+    ("stop_skills_sync.py",     HOOKS / "stop_skills_sync.py",        False),
+    ("_skills_daemon.py",       HOOKS / "_skills_daemon.py",          False),
 ]
 
 # Também atualiza ~/skills/hooks/ para evitar downgrade pelo self-update do HB
@@ -1376,7 +1378,9 @@ async def get_hook_file(filename: str):
     import hashlib
     allowed = {"_http.py": "~/skills/hooks/_http.py",
                "cerebro_loader.py": "~/skills/cerebro_loader.py",
-               "prompt_mcp_heartbeat.py": "~/skills/hooks/prompt_mcp_heartbeat.py"}
+               "prompt_mcp_heartbeat.py": "~/skills/hooks/prompt_mcp_heartbeat.py",
+               "stop_skills_sync.py": "~/skills/hooks/stop_skills_sync.py",
+               "_skills_daemon.py": "~/skills/hooks/_skills_daemon.py"}
     if filename not in allowed:
         raise HTTPException(status_code=404, detail="Arquivo não disponível")
     try:
