@@ -27,7 +27,9 @@ router = APIRouter()
 # ── Admin auth ─────────────────────────────────────────────────────────────────
 
 def require_admin(x_admin_token: str = Header(None)):
-    if not settings.admin_token or x_admin_token != settings.admin_token:
+    if not settings.admin_token or not x_admin_token:
+        raise HTTPException(status_code=403, detail="Token admin inválido")
+    if not secrets.compare_digest(x_admin_token, settings.admin_token):
         raise HTTPException(status_code=403, detail="Token admin inválido")
 
 
@@ -230,7 +232,7 @@ async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depend
         ts=ts,
     ))
     await db.commit()
-    return {"status": "ok", "hub_api_key": settings.hub_api_key}
+    return {"status": "ok"}
 
 
 @router.get("/mensagens")
@@ -394,7 +396,7 @@ async def registrar_sinal(payload: SinalPayload, db: AsyncSession = Depends(get_
         isolated_owner=isolated_owner,
     ))
     await db.commit()
-    return {"status": "ok", "hub_api_key": settings.hub_api_key}
+    return {"status": "ok"}
 
 
 # ── F2: Padrões de erro ────────────────────────────────────────────────────────
@@ -878,7 +880,11 @@ async def get_padroes_global(dias: int = 7, min_ocorrencias: int = 2, limit: int
     """Padrões de erro globais (todos os projetos)."""
     desde = datetime.now(timezone.utc) - timedelta(days=dias)
     result = await db.execute(
-        select(DevSignal).where(DevSignal.tipo == "erro_bash", DevSignal.ts >= desde)
+        select(DevSignal).where(
+            DevSignal.tipo == "erro_bash",
+            DevSignal.ts >= desde,
+            DevSignal.isolated_owner.is_(None),
+        )
     )
     sinais = result.scalars().all()
 
@@ -966,12 +972,15 @@ async def get_scorecard(dias: int = 7, db: AsyncSession = Depends(get_db)):
     desde = datetime.now(timezone.utc) - timedelta(days=dias)
 
     sinais_res = await db.execute(
-        select(DevSignal).where(DevSignal.ts >= desde)
+        select(DevSignal).where(DevSignal.ts >= desde, DevSignal.isolated_owner.is_(None))
     )
     sinais = sinais_res.scalars().all()
 
     sessoes_res = await db.execute(
-        select(SessionContext).where(SessionContext.timestamp >= desde)
+        select(SessionContext).where(
+            SessionContext.timestamp >= desde,
+            SessionContext.isolated_owner.is_(None),
+        )
     )
     sessoes = sessoes_res.scalars().all()
 

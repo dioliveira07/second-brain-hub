@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_host: str = "qdrant"
     qdrant_port: int = 6333
+    qdrant_api_key: str = ""
 
     # Redis
     redis_url: str = "redis://redis:6379/0"

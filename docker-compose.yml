@@ -58,6 +58,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
     volumes:
       - qdrant-data:/qdrant/storage
     ulimits:
@@ -86,8 +88,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
