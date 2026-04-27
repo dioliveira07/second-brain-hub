@@ -6,6 +6,7 @@ F6: continuidade entre devs (última sessão por projeto)
 """
 import base64
 import hashlib
+import hmac
 import logging
 import math
 import os
@@ -1186,7 +1187,7 @@ async def registrar_dev_local(payload: LocalDevCreate, db: AsyncSession = Depend
         raise HTTPException(status_code=409, detail=f"Dev '{payload.name}' já existe")
 
     token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    token_hash = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
 
     db.add(LocalDev(
         name=payload.name,
@@ -1232,7 +1233,7 @@ async def rotacionar_token_dev(dev: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Dev '{dev}' não encontrado")
 
     token = secrets.token_urlsafe(32)
-    ld.token_hash = hashlib.sha256(token.encode()).hexdigest()
+    ld.token_hash = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
     await db.commit()
     return {"status": "rotated", "dev": dev, "token": token}
 
@@ -1244,7 +1245,7 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
     ld = result.scalar_one_or_none()
     if not ld:
         raise HTTPException(status_code=401, detail="Dev não encontrado")
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    token_hash = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
     if not secrets.compare_digest(token_hash, ld.token_hash):
         raise HTTPException(status_code=401, detail="Token inválido")
     return {
