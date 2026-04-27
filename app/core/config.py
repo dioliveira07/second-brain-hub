@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     admin_token: str = ""  # X-Admin-Token para endpoints administrativos
     hub_api_key: str = ""  # X-Hub-Key — obrigatório para requests externos
     hub_auth_audit: bool = True  # True=loga sem bloquear, False=enforce
-    current_hb_version: str = "20260427.4"  # bump ao deployar novo HB
+    current_hb_version: str = "20260427.5"  # bump ao deployar novo HB
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
