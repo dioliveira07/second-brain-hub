@@ -50,6 +50,15 @@ def get_headers(config: dict) -> dict:
     headers = {"Content-Type": "application/json"}
     if config.get("token"):
         headers["Authorization"] = f"Bearer {config['token']}"
+    hub_key = os.environ.get("HUB_API_KEY", "").strip()
+    if not hub_key:
+        key_file = Path.home() / ".claude" / "hub_api_key"
+        try:
+            hub_key = key_file.read_text().strip()
+        except Exception:
+            pass
+    if hub_key:
+        headers["X-Hub-Key"] = hub_key
     return headers
 
 

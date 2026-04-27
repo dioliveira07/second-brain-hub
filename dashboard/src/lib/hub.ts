@@ -1,8 +1,16 @@
 const HUB_URL = process.env.HUB_API_URL || "http://host.docker.internal:8010";
+const HUB_KEY = process.env.HUB_API_KEY || "";
+
+function hubHeaders(extra?: HeadersInit): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (HUB_KEY) h["X-Hub-Key"] = HUB_KEY;
+  if (extra) Object.assign(h, extra);
+  return h;
+}
 
 export async function cerebroFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${HUB_URL}/api/cerebro${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: hubHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`Cerebro API error: ${res.status} ${path}`);
@@ -19,7 +27,7 @@ export async function hubFetch<T>(
 
   const res = await fetch(`${HUB_URL}/api/v1${path}`, {
     ...fetchOptions,
-    headers: { "Content-Type": "application/json", ...(fetchOptions?.headers || {}) },
+    headers: hubHeaders(fetchOptions?.headers as HeadersInit),
     next: revalidate === false ? undefined : { revalidate },
     cache: revalidate === false ? "no-store" : undefined,
   });

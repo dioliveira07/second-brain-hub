@@ -93,11 +93,6 @@ async def hub_auth_middleware(request: Request, call_next):
     if any(request.url.path.startswith(p) for p in _AUTH_SKIP_PREFIXES):
         return await call_next(request)
 
-    # Rede interna Docker — confiança implícita
-    client_ip = request.client.host if request.client else ""
-    if _is_internal(client_ip):
-        return await call_next(request)
-
     # Validar X-Hub-Key
     key = request.headers.get("X-Hub-Key", "")
     if settings.hub_api_key and key == settings.hub_api_key:
@@ -105,6 +100,7 @@ async def hub_auth_middleware(request: Request, call_next):
 
     # Falha de autenticação
     path = request.url.path
+    client_ip = request.client.host if request.client else ""
     mode = "AUDIT" if settings.hub_auth_audit else "ENFORCE"
     logger.warning("[%s] Unauthorized %s %s — ip=%s key_present=%s",
                    mode, request.method, path, client_ip, bool(key))
