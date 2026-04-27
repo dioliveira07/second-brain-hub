@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
-from sqlalchemy import select, delete, text, or_, update, func
+from sqlalchemy import select, delete, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -414,7 +414,7 @@ async def get_padroes(projeto: str, dias: int = 7, min_ocorrencias: int = 3, db:
             DevSignal.tipo == "erro_bash",
             DevSignal.ts >= desde,
             DevSignal.isolated_owner.is_(None),
-        )
+        ).limit(5000)
     )
     sinais = result.scalars().all()
 
@@ -448,7 +448,7 @@ async def get_afinidade_projeto(projeto: str, dias: int = 30, db: AsyncSession =
             DevSignal.tipo == "arquivo_editado",
             DevSignal.ts >= desde,
             DevSignal.isolated_owner.is_(None),
-        )
+        ).limit(5000)
     )
     sinais = result.scalars().all()
 
@@ -888,7 +888,7 @@ async def get_padroes_global(dias: int = 7, min_ocorrencias: int = 2, limit: int
             DevSignal.tipo == "erro_bash",
             DevSignal.ts >= desde,
             DevSignal.isolated_owner.is_(None),
-        )
+        ).limit(10000)
     )
     sinais = result.scalars().all()
 
@@ -976,7 +976,7 @@ async def get_scorecard(dias: int = 7, db: AsyncSession = Depends(get_db)):
     desde = datetime.now(timezone.utc) - timedelta(days=dias)
 
     sinais_res = await db.execute(
-        select(DevSignal).where(DevSignal.ts >= desde, DevSignal.isolated_owner.is_(None))
+        select(DevSignal).where(DevSignal.ts >= desde, DevSignal.isolated_owner.is_(None)).limit(10000)
     )
     sinais = sinais_res.scalars().all()
 
@@ -984,7 +984,7 @@ async def get_scorecard(dias: int = 7, db: AsyncSession = Depends(get_db)):
         select(SessionContext).where(
             SessionContext.timestamp >= desde,
             SessionContext.isolated_owner.is_(None),
-        )
+        ).limit(5000)
     )
     sessoes = sessoes_res.scalars().all()
 
@@ -1035,7 +1035,7 @@ async def get_conflitos(horas: int = 24, db: AsyncSession = Depends(get_db)):
         select(DevSignal).where(
             DevSignal.tipo.in_(["arquivo_editado", "commit_realizado"]),
             DevSignal.ts >= desde,
-        ).order_by(DevSignal.ts.asc())
+        ).order_by(DevSignal.ts.asc()).limit(10000)
     )
     sinais = result.scalars().all()
 
@@ -1138,7 +1138,7 @@ async def get_afinidade_geral(dias: int = 30, db: AsyncSession = Depends(get_db)
             DevSignal.tipo == "arquivo_editado",
             DevSignal.ts >= desde,
             DevSignal.isolated_owner.is_(None),
-        )
+        ).limit(10000)
     )
     sinais = result.scalars().all()
 

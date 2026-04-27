@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -19,7 +19,7 @@ class User(Base):
     repos_allowed: Mapped[dict] = mapped_column(JSONB, default=list)
     proactivity_level: Mapped[str] = mapped_column(String(20), default="advisor")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class IndexedRepo(Base):
@@ -44,7 +44,7 @@ class ArchitecturalDecision(Base):
     __tablename__ = "architectural_decisions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"))
+    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"), index=True)
     pr_number: Mapped[int] = mapped_column(Integer, nullable=False)
     pr_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     pr_author: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -62,7 +62,7 @@ class IndexingLog(Base):
     __tablename__ = "indexing_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"))
+    repo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("indexed_repos.id"), index=True)
     trigger: Mapped[str] = mapped_column(String(20), nullable=False)
     files_processed: Mapped[int] = mapped_column(Integer, default=0)
     chunks_created: Mapped[int] = mapped_column(Integer, default=0)
@@ -102,6 +102,10 @@ class SessionContext(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        Index("ix_session_contexts_projeto_timestamp", "projeto", "timestamp"),
+    )
+
 
 class DevSignal(Base):
     """F2/F3 — Sinais de atividade dos devs (erros, edições, skills usadas)."""
@@ -116,6 +120,10 @@ class DevSignal(Base):
     isolated_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        Index("ix_dev_signals_projeto_tipo_ts", "projeto", "tipo", "ts"),
+    )
+
 
 class SSHIdentity(Base):
     """Identidade de dev por sessão SSH (ip + source_port → dev, TTL 8h)."""
@@ -125,7 +133,7 @@ class SSHIdentity(Base):
     ssh_ip: Mapped[str] = mapped_column(String(64), nullable=False)
     ssh_port: Mapped[str] = mapped_column(String(10), nullable=False)
     dev: Mapped[str] = mapped_column(String(100), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     # Statusline stats (atualizados a cada /sbh-auth ou push do statusline)
     ctx_pct: Mapped[int | None] = mapped_column(nullable=True)

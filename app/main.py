@@ -41,8 +41,8 @@ def _is_internal(ip: str) -> bool:
 
 
 async def cleanup_sessions():
-    """Remove sessões expiradas, ghosts e MCPs inativos do banco."""
-    from app.db.models import SSHIdentity, MCPConnection
+    """Remove sessões expiradas, ghosts, MCPs inativos e dados antigos do banco."""
+    from app.db.models import SSHIdentity, MCPConnection, DevSignal, ChatMessage
     while True:
         try:
             async with async_session() as db:
@@ -64,6 +64,16 @@ async def cleanup_sessions():
                 mcp_cutoff = now - timedelta(hours=24)
                 await db.execute(
                     delete(MCPConnection).where(MCPConnection.last_seen_at <= mcp_cutoff)
+                )
+                # 4) DevSignal com mais de 60 dias (crescimento ilimitado)
+                signal_cutoff = now - timedelta(days=60)
+                await db.execute(
+                    delete(DevSignal).where(DevSignal.ts < signal_cutoff)
+                )
+                # 5) ChatMessage com mais de 90 dias
+                chat_cutoff = now - timedelta(days=90)
+                await db.execute(
+                    delete(ChatMessage).where(ChatMessage.ts < chat_cutoff)
                 )
                 await db.commit()
         except Exception:
