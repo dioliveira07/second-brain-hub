@@ -1261,15 +1261,32 @@ async def get_bootstrap_script():
         b for b in [settings.hub_base_url, "http://hub.fluxiom.com.br:8010", "http://187.77.241.157:8010"]
         if b
     ]
+    pub_key_b64 = "yKiI3G8Ux7K7TYCv4VLA7RPKfoEOlCjK063snx/0o5E="
     script = f'''#!/usr/bin/env python3
 """Bootstrap hub — instala chave + heartbeat atualizado. Funciona em Linux, Mac e Windows."""
-import os, json, socket, pathlib
+import os, json, socket, pathlib, base64
 import urllib.request as _ur
 
-HUB_BASES = {hub_bases!r}
-HOME      = pathlib.Path.home()
-CLAUDE    = HOME / ".claude"
-HOOKS     = CLAUDE / "hooks"
+HUB_BASES  = {hub_bases!r}
+HUB_PUBKEY = "{pub_key_b64}"
+HOME       = pathlib.Path.home()
+CLAUDE     = HOME / ".claude"
+HOOKS      = CLAUDE / "hooks"
+
+
+def _verify_signature(content, signature_b64):
+    """Verifica assinatura ed25519. Retorna True se válida ou se cryptography não disponível."""
+    if not signature_b64:
+        return True  # hub sem assinatura = versão antiga, aceita
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        pub = Ed25519PublicKey.from_public_bytes(base64.b64decode(HUB_PUBKEY))
+        pub.verify(base64.b64decode(signature_b64), content.encode("utf-8"))
+        return True
+    except ImportError:
+        return True  # sem lib, pula verificação
+    except Exception:
+        return False
 
 
 def _post(path, data):
@@ -1367,6 +1384,9 @@ for fname, dest, required in _files:
             raise SystemExit(1)
         continue
     content = d["content"]
+    if not _verify_signature(content, d.get("signature", "")):
+        print(f"ERRO: assinatura invalida para {{fname}} — possivel adulteracao")
+        raise SystemExit(1)
     dest.write_text(content, encoding='utf-8')
     try:
         dest.chmod(0o755)
@@ -1385,6 +1405,23 @@ print("\\nBOOTSTRAP CONCLUIDO - proximo prompt ja sera autenticado\\n")
     return script
 
 
+def _sign_content(content: str) -> str:
+    """Assina content com ed25519. Retorna base64 da assinatura, ou '' se chave indisponível."""
+    try:
+        import base64
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key_path = settings.hub_signing_key_path
+        if not os.path.exists(key_path):
+            return ""
+        pem = open(key_path, "rb").read()
+        private_key: Ed25519PrivateKey = load_pem_private_key(pem, password=None)
+        sig = private_key.sign(content.encode("utf-8"))
+        return base64.b64encode(sig).decode()
+    except Exception:
+        return ""
+
+
 @router.get("/hooks/{filename}")
 async def get_hook_file(filename: str):
     """Serve hooks críticos para auto-update sem depender de git."""
@@ -1398,7 +1435,13 @@ async def get_hook_file(filename: str):
         raise HTTPException(status_code=404, detail="Arquivo não disponível")
     try:
         content = open(os.path.expanduser(allowed[filename])).read()
-        return {"content": content, "hash": hashlib.sha256(content.encode()).hexdigest()[:16], "filename": filename}
+        signature = _sign_content(content)
+        return {
+            "content": content,
+            "hash": hashlib.sha256(content.encode()).hexdigest()[:16],
+            "filename": filename,
+            "signature": signature,
+        }
     except Exception:
         raise HTTPException(status_code=404, detail=f"{filename} não disponível")
 
