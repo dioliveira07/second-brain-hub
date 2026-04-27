@@ -26,7 +26,7 @@ _INTERNAL_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),      # loopback
 ]
 
-_AUTH_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json")
+_AUTH_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks/")
 
 
 def _is_internal(ip: str) -> bool:
