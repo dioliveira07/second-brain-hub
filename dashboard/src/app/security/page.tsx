@@ -29,6 +29,8 @@ export type MCPConn = {
   minutos_atras: number;
   ativo: boolean;
   skills_pending: boolean;
+  hb_version: string | null;
+  hb_outdated: boolean;
 };
 
 export default async function SecurityPage() {

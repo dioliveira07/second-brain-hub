@@ -29,6 +29,8 @@ export type MCPConn = {
   ativo: boolean;
   skills_updated_at: string | null;
   skills_pending: boolean;
+  hb_version: string | null;
+  hb_outdated: boolean;
 };
 
 export type SSHSession = {

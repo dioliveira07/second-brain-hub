@@ -223,6 +223,14 @@ export function SecurityClient({
                   </div>
                   <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>
                     {c.client_ip} · {timeAgoFromIso(c.last_seen_at)}
+                    {c.hb_version && (
+                      <span style={{ marginLeft: 8, color: (c as any).hb_outdated ? C.red : C.dim }}>
+                        · HB {c.hb_version}{(c as any).hb_outdated ? " ⚠ desatualizado" : ""}
+                      </span>
+                    )}
+                    {!c.hb_version && seenAfterRestart && (
+                      <span style={{ marginLeft: 8, color: C.red }}>· HB versão desconhecida</span>
+                    )}
                   </div>
                 </div>
               );

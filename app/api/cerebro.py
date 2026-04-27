@@ -230,7 +230,7 @@ async def registrar_mensagem(payload: MensagemPayload, db: AsyncSession = Depend
         ts=ts,
     ))
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "hub_api_key": settings.hub_api_key}
 
 
 @router.get("/mensagens")
@@ -394,7 +394,7 @@ async def registrar_sinal(payload: SinalPayload, db: AsyncSession = Depends(get_
         isolated_owner=isolated_owner,
     ))
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "hub_api_key": settings.hub_api_key}
 
 
 # ── F2: Padrões de erro ────────────────────────────────────────────────────────
@@ -641,6 +641,7 @@ class MCPConnectPayload(BaseModel):
     client_ip: str
     client_name: str = ""
     machine: str = ""
+    hb_version: str = ""
 
 
 @router.post("/mcp/update-trigger")
@@ -694,17 +695,32 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
         select(MCPConnection).where(MCPConnection.client_ip == payload.client_ip)
     )
     existing = result.scalar_one_or_none()
+    # Fallback: busca por machine name (bootstrap de máquinas com IP dinâmico)
+    if not existing and payload.machine:
+        result2 = await db.execute(
+            select(MCPConnection).where(MCPConnection.machine == payload.machine)
+        )
+        existing = result2.scalar_one_or_none()
     now = datetime.now(timezone.utc)
 
     if existing:
-        update_skills = bool(existing.pending_skills_update)
         existing.last_seen_at = now
         existing.real_ip = real_ip
         if payload.client_name:
             existing.client_name = payload.client_name
         if payload.machine:
             existing.machine = payload.machine
-        if update_skills:
+        if payload.hb_version:
+            existing.hb_version = payload.hb_version
+        # Versão desatualizada → update_skills automático
+        version_outdated = bool(
+            payload.hb_version
+            and settings.current_hb_version
+            and payload.hb_version != settings.current_hb_version
+        )
+        was_pending = bool(existing.pending_skills_update)
+        update_skills = was_pending or version_outdated
+        if was_pending:
             existing.pending_skills_update = False
             existing.skills_updated_at = now
     else:
@@ -714,6 +730,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
             client_name=payload.client_name or None,
             machine=payload.machine or None,
             real_ip=real_ip,
+            hb_version=payload.hb_version or None,
             connected_at=now,
             last_seen_at=now,
         ))
@@ -769,6 +786,8 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "skills_updated_at": c.skills_updated_at.isoformat() if c.skills_updated_at else None,
             "skills_pending": c.pending_skills_update,
             "real_ip": c.real_ip,
+            "hb_version": c.hb_version,
+            "hb_outdated": bool(c.hb_version and settings.current_hb_version and c.hb_version != settings.current_hb_version),
         }
         for c in conns
     ]
@@ -1222,12 +1241,142 @@ async def autenticar_dev_local(dev: str, token: str, db: AsyncSession = Depends(
     }
 
 
+@router.get("/bootstrap", response_class=__import__('fastapi').responses.PlainTextResponse)
+async def get_bootstrap_script():
+    """Retorna script Python universal para bootstrap de autenticação em qualquer máquina/OS."""
+    hub_bases = [
+        b for b in [settings.hub_base_url, "http://hub.fluxiom.com.br:8010", "http://187.77.241.157:8010"]
+        if b
+    ]
+    script = f'''#!/usr/bin/env python3
+"""Bootstrap hub — instala chave + heartbeat atualizado. Funciona em Linux, Mac e Windows."""
+import os, json, socket, pathlib
+import urllib.request as _ur
+
+HUB_BASES = {hub_bases!r}
+HOME      = pathlib.Path.home()
+CLAUDE    = HOME / ".claude"
+HOOKS     = CLAUDE / "hooks"
+
+
+def _post(path, data):
+    for base in HUB_BASES:
+        try:
+            req = _ur.Request(f"{{base}}{{path}}", data=data, method="POST")
+            req.add_header("Content-Type", "application/json")
+            with _ur.urlopen(req, timeout=5) as r:
+                return json.loads(r.read())
+        except Exception:
+            pass
+    return None
+
+
+def _get(path, key=""):
+    for base in HUB_BASES:
+        try:
+            req = _ur.Request(f"{{base}}{{path}}")
+            if key:
+                req.add_header("X-Hub-Key", key)
+            with _ur.urlopen(req, timeout=5) as r:
+                return json.loads(r.read())
+        except Exception:
+            pass
+    return None
+
+
+print("\\n=== Bootstrap Hub ===\\n")
+
+# 1. Conectar e obter chave
+machine = socket.gethostname()
+
+# Detecção de IP: SSH_CONNECTION > interface de rede > fallback
+ip = "127.0.0.1"
+ssh_conn = os.environ.get("SSH_CONNECTION", "").strip()
+if ssh_conn and len(ssh_conn.split()) >= 3:
+    ip = ssh_conn.split()[2]
+else:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+
+resp = _post("/api/cerebro/mcp/connect", json.dumps({{
+    "client_ip": ip, "client_name": f"bootstrap/{{machine}}", "machine": machine
+}}).encode())
+
+if not resp:
+    print("ERRO: não foi possível conectar ao hub")
+    raise SystemExit(1)
+
+hub_key = resp.get("hub_api_key", "")
+if not hub_key:
+    # Primeira chamada registra a maquina; segunda ja retorna a chave
+    resp2 = _post("/api/cerebro/mcp/connect", json.dumps({{
+        "client_ip": ip, "client_name": f"bootstrap/{{machine}}", "machine": machine
+    }}).encode())
+    hub_key = (resp2 or {{}}).get("hub_api_key", "")
+if not hub_key:
+    print("ERRO: maquina nao registrada no hub — contate o administrador")
+    raise SystemExit(1)
+
+# 2. Salvar chave
+CLAUDE.mkdir(exist_ok=True)
+key_file = CLAUDE / "hub_api_key"
+key_file.write_text(hub_key, encoding='utf-8')
+try:
+    key_file.chmod(0o600)
+except Exception:
+    pass
+print(f"OK  chave salva -> {{key_file}}")
+
+# 3. Baixar e instalar todos os hooks criticos
+HOOKS.mkdir(exist_ok=True)
+
+_files = [
+    ("prompt_mcp_heartbeat.py", HOOKS / "prompt_mcp_heartbeat.py",   True),
+    ("_http.py",                HOOKS / "_http.py",                   True),
+    ("cerebro_loader.py",       CLAUDE / "cerebro_loader.py",         False),
+]
+
+# Também atualiza ~/skills/hooks/ para evitar downgrade pelo self-update do HB
+SKILLS_HOOKS = HOME / "skills" / "hooks"
+
+for fname, dest, required in _files:
+    d = _get(f"/api/cerebro/hooks/{{fname}}", hub_key)
+    if not d or not d.get("content"):
+        if required:
+            print(f"ERRO: nao foi possivel baixar {{fname}}")
+            raise SystemExit(1)
+        continue
+    content = d["content"]
+    dest.write_text(content, encoding='utf-8')
+    try:
+        dest.chmod(0o755)
+    except Exception:
+        pass
+    # Espelha em ~/skills/hooks/ se existir (evita self-update sobrescrever)
+    if fname.endswith(".py") and fname != "cerebro_loader.py" and SKILLS_HOOKS.is_dir():
+        try:
+            (SKILLS_HOOKS / fname).write_text(content, encoding='utf-8')
+        except Exception:
+            pass
+    print(f"OK  {{fname}} -> {{dest}}")
+
+print("\\nBOOTSTRAP CONCLUIDO - proximo prompt ja sera autenticado\\n")
+'''
+    return script
+
+
 @router.get("/hooks/{filename}")
 async def get_hook_file(filename: str):
     """Serve hooks críticos para auto-update sem depender de git."""
     import hashlib
     allowed = {"_http.py": "~/skills/hooks/_http.py",
-               "cerebro_loader.py": "~/skills/cerebro_loader.py"}
+               "cerebro_loader.py": "~/skills/cerebro_loader.py",
+               "prompt_mcp_heartbeat.py": "~/skills/hooks/prompt_mcp_heartbeat.py"}
     if filename not in allowed:
         raise HTTPException(status_code=404, detail="Arquivo não disponível")
     try:

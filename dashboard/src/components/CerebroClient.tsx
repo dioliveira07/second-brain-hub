@@ -510,6 +510,13 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
           {!c.skills_pending && c.skills_updated_at && (
             <span title={`Sincronizado: ${c.skills_updated_at}`} style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, color: C.green, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>skills ✓</span>
           )}
+          {(c as any).hb_outdated ? (
+            <span title={`HB ${(c as any).hb_version} — desatualizado`} style={{ background: `${C.red}22`, border: `1px solid ${C.red}44`, color: C.red, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>HB ⚠</span>
+          ) : (c as any).hb_version ? (
+            <span title={`HB ${(c as any).hb_version}`} style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, color: C.green, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>HB ✓</span>
+          ) : (
+            <span title="Versão do HB desconhecida" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: C.muted, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>HB ?</span>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: C.dim }}>
             <Clock size={11} />
             <span style={{ fontFamily: "var(--mono)", fontSize: "0.7rem" }}>{timeAgo(c.minutos_atras)}</span>

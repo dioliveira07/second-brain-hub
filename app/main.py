@@ -19,6 +19,7 @@ logger = logging.getLogger("hub.auth")
 from collections import deque
 _audit_log: deque = deque(maxlen=500)
 _hub_started_at: str = datetime.now(timezone.utc).isoformat()
+_auth_success: dict = {}  # ip → último timestamp de sucesso (dedup 5min)
 
 _INTERNAL_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),   # Docker bridge
@@ -26,7 +27,7 @@ _INTERNAL_NETWORKS = [
     ipaddress.ip_network("127.0.0.0/8"),      # loopback
 ]
 
-_AUTH_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks/")
+_AUTH_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks/", "/api/cerebro/bootstrap")
 
 
 def _is_internal(ip: str) -> bool:
@@ -96,6 +97,19 @@ async def hub_auth_middleware(request: Request, call_next):
     # Validar X-Hub-Key
     key = request.headers.get("X-Hub-Key", "")
     if settings.hub_api_key and key == settings.hub_api_key:
+        client_ip = request.client.host if request.client else ""
+        now = datetime.now(timezone.utc)
+        last = _auth_success.get(client_ip)
+        if not last or (now - last) > timedelta(minutes=5):
+            _auth_success[client_ip] = now
+            _audit_log.append({
+                "ts": now.isoformat(),
+                "mode": "OK",
+                "method": request.method,
+                "path": request.url.path,
+                "ip": client_ip,
+                "key_present": True,
+            })
         return await call_next(request)
 
     # Falha de autenticação
