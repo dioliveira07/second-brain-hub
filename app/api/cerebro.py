@@ -1403,7 +1403,32 @@ for fname, dest, required in _files:
             pass
     print(f"OK  {{fname}} -> {{dest}}")
 
-# 4. Registrar heartbeat no settings.json
+# 4. Criar .noupdate — protege hooks críticos contra self-update do ~/skills/
+_noupdate = HOOKS / ".noupdate"
+_protected_hooks = [
+    "prompt_mcp_heartbeat.py",
+    "_http.py",
+    "stop_skills_sync.py",
+    "_skills_daemon.py",
+]
+try:
+    existing = set()
+    if _noupdate.exists():
+        existing = {{l.strip() for l in _noupdate.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")}}
+    missing = [h for h in _protected_hooks if h not in existing]
+    if missing:
+        with _noupdate.open("a", encoding="utf-8") as f:
+            if not existing:
+                f.write("# hooks gerenciados pelo hub — nao sobrescrever via self-update do ~/skills\\n")
+            for h in missing:
+                f.write(h + "\\n")
+        print(f"OK  .noupdate criado/atualizado ({{len(_protected_hooks)}} hooks protegidos)")
+    else:
+        print("OK  .noupdate ja configurado")
+except Exception as e:
+    print(f"WARN .noupdate nao criado: {{e}}")
+
+# 5. Registrar heartbeat no settings.json
 _sp = CLAUDE / "settings.json"
 try:
     import json as _j
@@ -1420,7 +1445,7 @@ if not _already:
 else:
     print("OK  heartbeat ja registrado em settings.json")
 
-print("\\nBOOTSTRAP CONCLUIDO - proximo prompt ja sera autenticado\\n")
+print("\\nBOOTSTRAP CONCLUIDO — proximo prompt ja sera autenticado\\n")
 '''
     return script
 
