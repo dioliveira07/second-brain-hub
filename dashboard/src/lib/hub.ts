@@ -88,3 +88,68 @@ export type GraphEdge = {
   type: string;
   weight: number;
 };
+
+// Foundation v2: memory + events + agents
+
+export type Memory = {
+  id: string;
+  type: string;
+  scope: string;
+  scope_ref: string | null;
+  title: string;
+  content: string;
+  tags: string[];
+  confidence: number;
+  access_count: number;
+  source_type: string | null;
+  source_ref: string | null;
+  expires_at: string | null;
+  archived: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type EventItem = {
+  id: string;
+  type: string;
+  actor: string | null;
+  projeto: string | null;
+  payload: Record<string, unknown>;
+  source_table: string | null;
+  source_id: string | null;
+  ts: string | null;
+  created_at: string | null;
+};
+
+export type AgentInfo = {
+  name: string;
+  model: string;
+  subscribes: string[];
+  cron: string | null;
+};
+
+export type AgentRunRow = {
+  id: string;
+  agent_name: string;
+  model: string | null;
+  trigger_type: string;
+  trigger_ref: string | null;
+  status: "running" | "done" | "error";
+  error_message: string | null;
+  duration_ms: number | null;
+  cost_estimate: number | null;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type AgentSubscription = {
+  id: string;
+  agent_name: string;
+  projeto: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+};
