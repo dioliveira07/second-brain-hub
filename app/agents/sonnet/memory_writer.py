@@ -12,11 +12,48 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
-from app.db.models import Memory, CausalEdge
+from app.db.models import Memory, CausalEdge, DevSignal
+
+
+async def _files_around_commit(db: AsyncSession, dev: str, projeto: str, ts: datetime, window_min: int = 10) -> list[str]:
+    """Arquivos editados pelo mesmo dev até window_min antes do ts.
+
+    Tenta primeiro filtrando por mesmo projeto. Se vier vazio, ignora projeto
+    (Claude Code muitas vezes atribui edits ao projeto do cwd, não do arquivo).
+    """
+    if not ts:
+        return []
+    since = ts - timedelta(minutes=window_min)
+
+    async def _query(by_projeto: bool):
+        q = select(DevSignal).where(
+            DevSignal.dev == dev,
+            DevSignal.tipo == "arquivo_editado",
+            DevSignal.ts >= since,
+            DevSignal.ts <= ts,
+        )
+        if by_projeto:
+            q = q.where(DevSignal.projeto == projeto)
+        q = q.order_by(DevSignal.ts.desc()).limit(50)
+        r = await db.execute(q)
+        files = []
+        seen = set()
+        for s in r.scalars().all():
+            f = (s.dados or {}).get("arquivo")
+            if f and f not in seen:
+                seen.add(f)
+                files.append(f)
+        return files
+
+    files = await _query(by_projeto=True)
+    if not files:
+        files = await _query(by_projeto=False)
+    return files
 
 
 # commits que não viram memória
@@ -61,14 +98,20 @@ class MemoryWriter(AgentBase):
         impact_areas = payload.get("impact_areas", []) or []
         breaking = payload.get("breaking_changes", False)
         decision_id = payload.get("decision_id")
+        changed_files = (payload.get("changed_files") or [])[:30]
 
         content = (
             f"PR #{payload.get('pr_number', '?')}: {title}\n"
             f"Autor: {ev.get('actor', '?')}\n"
             f"Áreas afetadas: {', '.join(impact_areas)}\n"
             f"Breaking change: {'sim' if breaking else 'não'}\n"
-            f"Arquivos: {', '.join((payload.get('changed_files') or [])[:10])}"
+            f"Arquivos: {', '.join(changed_files[:10])}"
         )
+
+        # Tags inclui impact_areas + arquivos (basenames + paths) — facilita match
+        tags = list(impact_areas) + (["breaking"] if breaking else [])
+        for f in changed_files:
+            tags.append(f"file:{f}")
 
         mem = Memory(
             type="architectural_decision",
@@ -76,7 +119,7 @@ class MemoryWriter(AgentBase):
             scope_ref=ev.get("projeto"),
             title=title[:500],
             content=content,
-            tags=impact_areas + (["breaking"] if breaking else []),
+            tags=tags,
             confidence=1.0,
             source_type="decision",
             source_ref=decision_id,
@@ -133,14 +176,34 @@ class MemoryWriter(AgentBase):
             summary = msg
             cost = 0.0
 
+        # Enriquece com arquivos editados próximos ao commit (10min antes)
+        ts_str = ev.get("ts")
+        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
+        files = await _files_around_commit(db, ev.get("actor", ""), ev.get("projeto", ""), ts)
+
+        tags = []
+        if branch:
+            tags.append(f"branch:{branch}")
+        for f in files:
+            tags.append(f"file:{f}")
+
+        content_lines = [
+            f"Commit {sha} por {ev.get('actor', '?')} em {branch}",
+            "",
+            msg,
+        ]
+        if files:
+            content_lines.append("")
+            content_lines.append(f"Arquivos tocados (até 10min antes): {', '.join(files[:10])}")
+
         mem = Memory(
             type="progress",
             scope="project",
             scope_ref=ev.get("projeto"),
             title=summary[:500],
-            content=f"Commit {sha} por {ev.get('actor', '?')} em {branch}\n\n{msg}",
-            tags=[branch] if branch else [],
-            confidence=0.7,  # progress começa com confiança média; decay aplicado depois
+            content="\n".join(content_lines),
+            tags=tags,
+            confidence=0.7,
             source_type="signal",
             source_ref=str(ev.get("source_id", "")),
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
@@ -149,6 +212,6 @@ class MemoryWriter(AgentBase):
         await db.flush()
 
         return AgentResult(
-            output={"memory_id": str(mem.id), "type": "progress", "summary_length": len(summary)},
+            output={"memory_id": str(mem.id), "type": "progress", "summary_length": len(summary), "files_inferred": len(files)},
             cost_estimate=cost,
         )

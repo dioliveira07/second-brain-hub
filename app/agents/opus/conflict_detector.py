@@ -111,8 +111,12 @@ class ConflictDetector(AgentBase):
                 "files": files[:5],
             })
 
-        # Pede para Opus avaliar conflito (limita ao top-3 por relevância de fonte)
-        decisions_for_prompt = all_signals[:3]
+        # Ranquear por overlap semântico com o diff (palavras-chave compartilhadas)
+        diff_text = (payload.get("diff") or "").lower()
+        all_signals = self._rank_by_relevance(all_signals, diff_text)
+
+        # Top-5 (Opus tem capacidade de filtrar ruído entre múltiplos candidatos)
+        decisions_for_prompt = all_signals[:5]
         prompt = self._build_prompt(payload, files, decisions_for_prompt)
         try:
             response = await self._claude_call(prompt, max_tokens=512, timeout=120)
@@ -198,38 +202,84 @@ class ConflictDetector(AgentBase):
         )
 
     async def _search_memories(self, db, files: list[str], projeto: str) -> list[dict]:
-        """Busca Memory (architectural_decision e progress) com conteúdo mencionando os arquivos."""
+        """Busca Memory (architectural_decision/progress/pattern/gotcha) por:
+        1. Tag exata `file:<path>` (preferido — match rápido e preciso)
+        2. Match de path/basename no title+content (fallback)
+        """
         if not files:
             return []
-        # filtra projeto e tipo, depois texto
         q = select(Memory).where(
             Memory.archived == False,  # noqa: E712
             Memory.scope_ref == projeto,
             Memory.type.in_(["architectural_decision", "progress", "pattern", "gotcha"]),
-        ).order_by(Memory.confidence.desc(), Memory.created_at.desc()).limit(20)
+        ).order_by(Memory.confidence.desc(), Memory.created_at.desc()).limit(50)
         result = await db.execute(q)
+
         out = []
+        seen_ids = set()
+        # Match por tag (preferencial)
+        file_tags = {f"file:{f}" for f in files}
         for m in result.scalars().all():
+            tags = set(m.tags or [])
+            if tags & file_tags:
+                if m.id in seen_ids:
+                    continue
+                seen_ids.add(m.id)
+                out.append(self._memory_to_decision_dict(m, "memory_tag"))
+                if len(out) >= 5:
+                    return out
+
+        # Match por content (fallback)
+        for m in result.scalars().all() if False else []:
+            pass  # noop; reusamos result acima
+        # Re-query para pegar memories sem tag-match
+        result2 = await db.execute(q)
+        for m in result2.scalars().all():
+            if m.id in seen_ids:
+                continue
             blob = (m.title + " " + m.content).lower()
             for f in files:
-                # match por basename ou path completo
                 base = f.rsplit("/", 1)[-1].lower()
                 if f.lower() in blob or (len(base) > 4 and base in blob):
-                    out.append({
-                        "source": "memory",
-                        "memory_id": str(m.id),
-                        "pr_number": None,
-                        "pr_title": m.title,
-                        "impact_areas": m.tags or [],
-                        "breaking_changes": "breaking" in (m.tags or []),
-                        "merged_at": (m.created_at.isoformat() if m.created_at else ""),
-                        "content": m.content,
-                        "type": m.type,
-                    })
+                    seen_ids.add(m.id)
+                    out.append(self._memory_to_decision_dict(m, "memory_text"))
                     break
             if len(out) >= 5:
                 break
         return out
+
+    def _rank_by_relevance(self, signals: list[dict], diff_text: str) -> list[dict]:
+        """Ranqueia signals por overlap de tokens com diff_text. Mantém ordem original em empate."""
+        if not diff_text:
+            return signals
+        # tokens significativos (>3 chars, alfanuméricos, lowercase)
+        diff_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", diff_text))
+        if not diff_tokens:
+            return signals
+
+        def score(s: dict) -> float:
+            text = ((s.get("pr_title") or "") + " " + (s.get("content") or "")).lower()
+            tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", text))
+            overlap = len(diff_tokens & tokens)
+            # bônus pra memórias (sources mais explícitas que edit_history)
+            bonus = 0.1 if s.get("source", "").startswith("memory") else 0.0
+            bonus += 0.2 if s.get("source") == "qdrant" else 0.0
+            return overlap + bonus
+
+        return sorted(signals, key=score, reverse=True)
+
+    def _memory_to_decision_dict(self, m, source: str) -> dict:
+        return {
+            "source": source,
+            "memory_id": str(m.id),
+            "pr_number": None,
+            "pr_title": m.title,
+            "impact_areas": [t for t in (m.tags or []) if not t.startswith("file:") and not t.startswith("branch:")],
+            "breaking_changes": "breaking" in (m.tags or []),
+            "merged_at": (m.created_at.isoformat() if m.created_at else ""),
+            "content": m.content,
+            "type": m.type,
+        }
 
     async def _search_recent_edits(self, db, files: list[str], projeto: str, exclude_signal_id) -> list[dict]:
         """Últimas 5 edições/commits ao mesmo arquivo nos últimos 30d."""
