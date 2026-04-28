@@ -1436,9 +1436,13 @@ try:
 except Exception:
     _s = {{}}
 # forward slashes — bash do Git Bash come backslashes em paths Windows
-_hb_cmd = (HOOKS / "prompt_mcp_heartbeat.py").as_posix()
+# python explicito — shebang #!/usr/bin/env python3 falha no Windows (so tem 'python')
+import sys as _sys2
+_hb_path = (HOOKS / "prompt_mcp_heartbeat.py").as_posix()
+_python = "python" if _sys2.platform == "win32" else "python3"
+_hb_cmd = _python + ' "' + _hb_path + '"'
 _ups = _s.setdefault("hooks", {{}}).setdefault("UserPromptSubmit", [])
-# remove entrada antiga com backslashes se existir (cleanup de bootstrap anterior)
+# remove entradas antigas (paths nus, backslashes, python3 no Windows) — cleanup idempotente
 for _e in _ups:
     _e["hooks"] = [_h for _h in _e.get("hooks", [])
                    if "prompt_mcp_heartbeat.py" not in _h.get("command", "")
@@ -1460,7 +1464,7 @@ if _sys.platform == "win32":
     # Windows — Task Scheduler via schtasks
     try:
         _task = "ClaudeHubHeartbeat"
-        _tr = "python3 " + chr(34) + _hb_py + chr(34)
+        _tr = "python " + chr(34) + _hb_py + chr(34)
         _sp2.run(["schtasks", "/delete", "/tn", _task, "/f"], capture_output=True)
         _sp2.run([
             "schtasks", "/create", "/tn", _task,
