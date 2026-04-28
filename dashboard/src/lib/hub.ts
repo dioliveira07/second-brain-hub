@@ -153,3 +153,26 @@ export type AgentSubscription = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type CausalNode = {
+  id: string;
+  table: string;
+  type: string;
+  label: string;
+  meta: Record<string, unknown>;
+};
+
+export type CausalEdgeData = {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  confidence: number;
+  detected_by: string | null;
+};
+
+export type CausalGraphData = {
+  nodes: CausalNode[];
+  edges: CausalEdgeData[];
+  totals: { nodes: number; edges: number; edges_total_db: number };
+};

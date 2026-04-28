@@ -239,6 +239,22 @@ class MemoryWriter(AgentBase):
         except Exception:
             pass
 
+        # Edge causal: signal commit → memory progress
+        signal_id_raw = ev.get("source_id")
+        if signal_id_raw:
+            try:
+                db.add(CausalEdge(
+                    cause_table="dev_signals",
+                    cause_id=uuid.UUID(str(signal_id_raw)),
+                    effect_table="memories",
+                    effect_id=mem.id,
+                    relation="derived_from",
+                    confidence=1.0,
+                    detected_by="memory_writer",
+                ))
+            except Exception:
+                pass
+
         return AgentResult(
             output={"memory_id": str(mem.id), "type": "progress", "summary_length": len(summary), "files_inferred": len(files)},
             cost_estimate=cost,

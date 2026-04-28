@@ -1877,6 +1877,145 @@ async def listar_events(
     return [_event_to_dict(e) for e in result.scalars().all()]
 
 
+@router.get("/causal/graph")
+async def get_causal_graph(
+    projeto: str | None = None,
+    relation: str | None = None,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retorna grafo causal completo: nodes (com metadata) + edges.
+
+    Filtros opcionais: projeto (filtra memories e events do projeto),
+    relation (filtra tipo de edge).
+
+    Estrutura retornada:
+    {
+      "nodes": [{"id", "type", "table", "label", "meta"}],
+      "edges": [{"id", "source", "target", "relation", "confidence"}]
+    }
+    """
+    q = select(CausalEdge)
+    if relation:
+        q = q.where(CausalEdge.relation == relation)
+    q = q.order_by(CausalEdge.created_at.desc()).limit(min(limit, 500))
+    result = await db.execute(q)
+    edges_raw = result.scalars().all()
+
+    if not edges_raw:
+        return {"nodes": [], "edges": []}
+
+    # Agrupa IDs por tabela
+    by_table: dict[str, set] = {}
+    for e in edges_raw:
+        by_table.setdefault(e.cause_table, set()).add(e.cause_id)
+        by_table.setdefault(e.effect_table, set()).add(e.effect_id)
+
+    # Resolve metadata por tabela
+    nodes_by_id: dict[str, dict] = {}
+
+    if "memories" in by_table:
+        ids = list(by_table["memories"])
+        r = await db.execute(select(Memory).where(Memory.id.in_(ids), Memory.archived == False))  # noqa: E712
+        for m in r.scalars().all():
+            if projeto and m.scope_ref and m.scope_ref != projeto:
+                continue
+            nodes_by_id[str(m.id)] = {
+                "id": str(m.id),
+                "table": "memories",
+                "type": m.type,
+                "label": (m.title or "")[:80],
+                "meta": {
+                    "scope": m.scope,
+                    "scope_ref": m.scope_ref,
+                    "confidence": m.confidence,
+                    "tags": m.tags or [],
+                },
+            }
+
+    if "architectural_decisions" in by_table:
+        from app.db.models import ArchitecturalDecision, IndexedRepo
+        ids = list(by_table["architectural_decisions"])
+        r = await db.execute(
+            select(ArchitecturalDecision, IndexedRepo)
+            .join(IndexedRepo, ArchitecturalDecision.repo_id == IndexedRepo.id)
+            .where(ArchitecturalDecision.id.in_(ids))
+        )
+        for d, repo in r.all():
+            if projeto and repo.github_full_name != projeto:
+                continue
+            nodes_by_id[str(d.id)] = {
+                "id": str(d.id),
+                "table": "architectural_decisions",
+                "type": "decision",
+                "label": f"PR #{d.pr_number}: {(d.pr_title or '')[:70]}",
+                "meta": {
+                    "repo": repo.github_full_name,
+                    "pr_number": d.pr_number,
+                    "impact_areas": d.impact_areas or [],
+                    "breaking_changes": d.breaking_changes,
+                },
+            }
+
+    if "dev_signals" in by_table:
+        ids = list(by_table["dev_signals"])
+        r = await db.execute(select(DevSignal).where(DevSignal.id.in_(ids)))
+        for s in r.scalars().all():
+            if projeto and s.projeto != projeto:
+                continue
+            label = f"{s.tipo} · {s.dev}"
+            arquivo = (s.dados or {}).get("arquivo")
+            if arquivo:
+                label += f" · {arquivo.rsplit('/', 1)[-1]}"
+            nodes_by_id[str(s.id)] = {
+                "id": str(s.id),
+                "table": "dev_signals",
+                "type": s.tipo,
+                "label": label[:90],
+                "meta": {"projeto": s.projeto, "dev": s.dev, "ts": s.ts.isoformat() if s.ts else None},
+            }
+
+    if "events" in by_table:
+        ids = list(by_table["events"])
+        r = await db.execute(select(Event).where(Event.id.in_(ids)))
+        for e in r.scalars().all():
+            if projeto and e.projeto and e.projeto != projeto:
+                continue
+            nodes_by_id[str(e.id)] = {
+                "id": str(e.id),
+                "table": "events",
+                "type": e.type,
+                "label": f"{e.type} · {e.actor or '?'}",
+                "meta": {"projeto": e.projeto, "actor": e.actor},
+            }
+
+    # Edges — só inclui se ambos os nodes resolveram (filtro de projeto)
+    edges = []
+    for e in edges_raw:
+        cause = str(e.cause_id)
+        effect = str(e.effect_id)
+        if cause not in nodes_by_id or effect not in nodes_by_id:
+            continue
+        edges.append({
+            "id": str(e.id),
+            "source": cause,
+            "target": effect,
+            "relation": e.relation,
+            "confidence": e.confidence,
+            "detected_by": e.detected_by,
+        })
+
+    return {
+        "nodes": list(nodes_by_id.values()),
+        "edges": edges,
+        "totals": {
+            "nodes": len(nodes_by_id),
+            "edges": len(edges),
+            "edges_total_db": len(edges_raw),
+        },
+    }
+
+
 @router.get("/causal/{table}/{node_id}")
 async def get_causal_edges(table: str, node_id: str, direction: str = "both", db: AsyncSession = Depends(get_db)):
     """Retorna edges causais conectadas a um nó.
