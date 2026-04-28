@@ -74,17 +74,43 @@ class AgentBase:
     async def _claude_call(self, prompt: str, *, max_tokens: int = 1024, timeout: int = 120) -> str:
         """Invoca o binário claude local. Bloqueante — usa to_thread.
 
+        HOME é redirecionado para /tmp/agent-home pra evitar write em
+        /root/.claude.json (que está RO via bind mount). Config é copiada
+        do host na primeira call.
+
         Retorna stdout (texto da resposta). Levanta em erro.
         """
+        import os
+        import shutil
+
         model_id = MODEL_MAP.get(self.MODEL, MODEL_MAP["sonnet"])
+
+        # Setup HOME writable (idempotente)
+        agent_home = "/tmp/agent-home"
+        try:
+            os.makedirs(agent_home, exist_ok=True)
+            os.chmod(agent_home, 0o755)
+            # Copia .claude.json se ainda não existe
+            target_config = f"{agent_home}/.claude.json"
+            if not os.path.exists(target_config) and os.path.exists("/root/.claude.json"):
+                shutil.copy("/root/.claude.json", target_config)
+                os.chmod(target_config, 0o644)
+            # Symlink .claude (que é RO mas só precisa ler)
+            target_claude = f"{agent_home}/.claude"
+            if not os.path.exists(target_claude) and os.path.exists("/root/.claude"):
+                os.symlink("/root/.claude", target_claude)
+        except Exception as e:
+            logger.warning("setup HOME falhou: %s", e)
+
+        env = {**os.environ, "HOME": agent_home}
 
         def _invoke() -> str:
             r = subprocess.run(
                 [CLAUDE_BIN, "-p", prompt, "--model", model_id],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True, text=True, timeout=timeout, env=env,
             )
             if r.returncode != 0:
-                raise RuntimeError(f"claude CLI falhou (rc={r.returncode}): {r.stderr[:500]}")
+                raise RuntimeError(f"claude CLI falhou (rc={r.returncode}): {(r.stderr or r.stdout)[:500]}")
             return r.stdout
 
         return await asyncio.to_thread(_invoke)

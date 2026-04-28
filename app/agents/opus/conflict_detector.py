@@ -27,9 +27,11 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select, or_
+
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
-from app.db.models import Memory, CausalEdge
+from app.db.models import Memory, CausalEdge, DevSignal
 
 
 @register
@@ -95,11 +97,22 @@ class ConflictDetector(AgentBase):
             except Exception:
                 continue
 
-        if not seen_decisions:
-            return AgentResult(status="done", output={"skipped": True, "reason": "nenhuma decisão relevante", "files": files[:5]})
+        # Também busca em Memory (decisões locais ou progress recentes do mesmo arquivo)
+        memory_decisions = await self._search_memories(db, files, projeto)
 
-        # Pede para Opus avaliar conflito
-        decisions_for_prompt = list(seen_decisions.values())[:3]
+        # E busca commits recentes no mesmo arquivo (sinais de edição prévios)
+        recent_edits = await self._search_recent_edits(db, files, projeto, ev.get("source_id"))
+
+        all_signals = list(seen_decisions.values()) + memory_decisions + recent_edits
+        if not all_signals:
+            return AgentResult(status="done", output={
+                "skipped": True,
+                "reason": "nenhuma decisão/histórico relevante",
+                "files": files[:5],
+            })
+
+        # Pede para Opus avaliar conflito (limita ao top-3 por relevância de fonte)
+        decisions_for_prompt = all_signals[:3]
         prompt = self._build_prompt(payload, files, decisions_for_prompt)
         try:
             response = await self._claude_call(prompt, max_tokens=512, timeout=120)
@@ -117,16 +130,27 @@ class ConflictDetector(AgentBase):
 
         # Há conflito — cria Memory de session
         machine = (payload.get("machine") or actor or "unknown")[:255]
-        decision_pr = decisions_for_prompt[0].get("pr_number")
-        decision_title = decisions_for_prompt[0].get("pr_title") or "decisão"
+        top = decisions_for_prompt[0]
+        source = top.get("source", "qdrant")
+        decision_pr = top.get("pr_number")
+        decision_title = top.get("pr_title") or "decisão"
 
-        title = f"⚠️ Mudança em {files[0]} pode contradizer PR #{decision_pr}"
+        if source == "qdrant" and decision_pr:
+            ref = f"PR #{decision_pr}"
+        elif source == "memory":
+            ref = f"memória local ({top.get('type', 'decisão')})"
+        elif source == "edit_history":
+            ref = "edição recente local"
+        else:
+            ref = "decisão prévia"
+
+        title = f"⚠️ Mudança em {files[0]} pode contradizer {ref}"
         content = (
             f"Você tocou: {', '.join(files[:3])}\n\n"
-            f"Decisão potencialmente contradita: {decision_title}\n"
-            f"PR: #{decision_pr} (score: {verdict.get('score'):.2f})\n\n"
+            f"Fonte: {decision_title}\n"
+            f"Score de conflito: {verdict.get('score'):.2f}\n\n"
             f"Razão (Opus): {verdict.get('reasoning', 'N/A')}\n\n"
-            f"Confirma intenção de mudar? Se for intencional, esta é a sua chance de documentar o porquê."
+            f"Confirma intenção de mudar? Se for intencional, documente o porquê."
         )
 
         mem = Memory(
@@ -172,6 +196,81 @@ class ConflictDetector(AgentBase):
             },
             cost_estimate=cost,
         )
+
+    async def _search_memories(self, db, files: list[str], projeto: str) -> list[dict]:
+        """Busca Memory (architectural_decision e progress) com conteúdo mencionando os arquivos."""
+        if not files:
+            return []
+        # filtra projeto e tipo, depois texto
+        q = select(Memory).where(
+            Memory.archived == False,  # noqa: E712
+            Memory.scope_ref == projeto,
+            Memory.type.in_(["architectural_decision", "progress", "pattern", "gotcha"]),
+        ).order_by(Memory.confidence.desc(), Memory.created_at.desc()).limit(20)
+        result = await db.execute(q)
+        out = []
+        for m in result.scalars().all():
+            blob = (m.title + " " + m.content).lower()
+            for f in files:
+                # match por basename ou path completo
+                base = f.rsplit("/", 1)[-1].lower()
+                if f.lower() in blob or (len(base) > 4 and base in blob):
+                    out.append({
+                        "source": "memory",
+                        "memory_id": str(m.id),
+                        "pr_number": None,
+                        "pr_title": m.title,
+                        "impact_areas": m.tags or [],
+                        "breaking_changes": "breaking" in (m.tags or []),
+                        "merged_at": (m.created_at.isoformat() if m.created_at else ""),
+                        "content": m.content,
+                        "type": m.type,
+                    })
+                    break
+            if len(out) >= 5:
+                break
+        return out
+
+    async def _search_recent_edits(self, db, files: list[str], projeto: str, exclude_signal_id) -> list[dict]:
+        """Últimas 5 edições/commits ao mesmo arquivo nos últimos 30d."""
+        if not files:
+            return []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        q = select(DevSignal).where(
+            DevSignal.projeto == projeto,
+            DevSignal.tipo.in_(["arquivo_editado", "commit_realizado"]),
+            DevSignal.ts >= cutoff,
+        ).order_by(DevSignal.ts.desc()).limit(40)
+        result = await db.execute(q)
+
+        out = []
+        for s in result.scalars().all():
+            if exclude_signal_id and str(s.id) == str(exclude_signal_id):
+                continue
+            dados = s.dados or {}
+            arquivo = (dados.get("arquivo") or "").lower()
+            for f in files:
+                if arquivo == f.lower():
+                    out.append({
+                        "source": "edit_history",
+                        "memory_id": None,
+                        "pr_number": None,
+                        "pr_title": f"Edição prévia em {arquivo} por {s.dev}",
+                        "impact_areas": [],
+                        "breaking_changes": False,
+                        "merged_at": s.ts.isoformat() if s.ts else "",
+                        "content": (
+                            f"Dev: {s.dev}\n"
+                            f"Tipo: {s.tipo}\n"
+                            f"Quando: {s.ts.isoformat() if s.ts else '?'}\n"
+                            f"Diff:\n{(dados.get('diff') or '')[:1500]}"
+                        ),
+                        "type": "history",
+                    })
+                    break
+            if len(out) >= 5:
+                break
+        return out
 
     def _extract_files(self, payload: dict) -> list[str]:
         # signal.arquivo_editado: payload['arquivo']
