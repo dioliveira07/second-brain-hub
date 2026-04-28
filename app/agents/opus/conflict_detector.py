@@ -44,10 +44,19 @@ RELEVANCE_THRESHOLD = 1.0
 DEDUPE_MIN = 10
 
 
+# Tiered escalation: Sonnet default (5x mais barato).
+# Escalada para Opus só quando Sonnet ≥ ESCALATE_LOW (sinal de conflito real
+# mas abaixo do threshold de 0.7). Score final = max(sonnet, opus) — Opus
+# tende a ser conservador e downgrades scores que Sonnet acerta.
+# Sonnet < 0.5 é confiança suficiente em "no_conflict", não escala.
+ESCALATE_LOW = 0.5
+ESCALATE_HIGH = 0.7
+
+
 @register
 class ConflictDetector(AgentBase):
     NAME = "conflict_detector"
-    MODEL = "opus"
+    MODEL = "sonnet"  # default barato — escala pra opus em zona cinza
     # Só commit_realizado (pontos de decisão real, não edits intermediários WIP).
     # Arquivo_editado seria 10x o volume com sinal mais ruidoso.
     SUBSCRIBES = (
@@ -59,6 +68,12 @@ class ConflictDetector(AgentBase):
         payload = ev.get("payload", {}) or {}
         projeto = ev.get("projeto") or ""
         actor = ev.get("actor") or "unknown"
+
+        # Override de modelo via input (para benchmark sonnet vs opus)
+        override_model = (input or {}).get("model_override") or payload.get("model_override")
+        if override_model in ("sonnet", "opus", "haiku"):
+            self._original_model = self.MODEL
+            self.MODEL = override_model
 
         # Extrai arquivos tocados
         files = self._extract_files(payload)
@@ -149,20 +164,63 @@ class ConflictDetector(AgentBase):
         # Marca dedupe AGORA (antes do Opus call) para evitar burst de triggers paralelos
         await self._mark_dedupe(actor, files)
 
-        # Top-5 (Opus tem capacidade de filtrar ruído entre múltiplos candidatos)
+        # Top-5 candidatos
         decisions_for_prompt = all_signals[:5]
         prompt = self._build_prompt(payload, files, decisions_for_prompt)
+
         try:
             response = await self._claude_call(prompt, max_tokens=512, timeout=120)
             cost = self._estimate_cost(len(prompt), len(response))
         except Exception as e:
-            return AgentResult(status="error", error_message=f"opus call falhou: {e}", output={"prompt_size": len(prompt)})
+            return AgentResult(status="error", error_message=f"{self.MODEL} call falhou: {e}", output={"prompt_size": len(prompt)})
 
-        # Parseia resposta JSON do Opus
         verdict = self._parse_verdict(response)
+        used_model = self.MODEL
+        escalated = False
+
+        # Escalada opt-in: input.escalate=true ou payload.escalate=true para forçar
+        # double-check com Opus quando Sonnet retorna score em zona cinza.
+        # Default desabilitado: benchmark mostrou Sonnet sozinho mais consistente
+        # (14/15 estável vs 13-15/15 com escalation).
+        escalate_requested = (
+            (input or {}).get("escalate") or payload.get("escalate")
+        )
+        if (verdict and escalate_requested
+            and self.MODEL == "sonnet"
+            and ESCALATE_LOW <= (verdict.get("score") or 0) <= ESCALATE_HIGH):
+            sonnet_score = verdict.get("score") or 0
+            sonnet_verdict = verdict
+            self.MODEL = "opus"
+            try:
+                response2 = await self._claude_call(prompt, max_tokens=512, timeout=120)
+                cost += self._estimate_cost(len(prompt), len(response2))
+                verdict2 = self._parse_verdict(response2)
+                if verdict2:
+                    opus_score = verdict2.get("score") or 0
+                    # Usa o veredito com maior score; preserva ambos os reasonings
+                    if opus_score >= sonnet_score:
+                        verdict = verdict2
+                        used_model = "opus"
+                    else:
+                        # Mantém Sonnet mas registra que Opus achou menor
+                        verdict["score"] = sonnet_score  # explicit
+                        verdict["opus_score"] = opus_score
+                        used_model = "sonnet+opus"
+                    escalated = True
+            except Exception:
+                pass  # mantém veredito Sonnet em caso de falha
+            finally:
+                self.MODEL = "sonnet"
+
         if not verdict or verdict.get("score", 0) < 0.7:
             return AgentResult(
-                output={"decisions_evaluated": len(decisions_for_prompt), "verdict": verdict, "no_conflict": True},
+                output={
+                    "decisions_evaluated": len(decisions_for_prompt),
+                    "verdict": verdict,
+                    "no_conflict": True,
+                    "used_model": used_model,
+                    "escalated": escalated,
+                },
                 cost_estimate=cost,
             )
 
@@ -231,6 +289,8 @@ class ConflictDetector(AgentBase):
                 "verdict": verdict,
                 "files": files[:3],
                 "decisions_evaluated": len(decisions_for_prompt),
+                "used_model": used_model,
+                "escalated": escalated,
             },
             cost_estimate=cost,
         )
