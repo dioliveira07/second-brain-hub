@@ -167,8 +167,12 @@ class MemoryWriter(AgentBase):
                 f"Resposta apenas com o resumo, sem prefácio."
             )
             try:
-                summary = (await self._claude_call(prompt, max_tokens=128, timeout=60)).strip()[:300]
-                cost = self._estimate_cost(len(prompt), len(summary))
+                text, usage = await self._claude_call(
+                    prompt, max_tokens=128, timeout=60,
+                    system_prompt="Você resume commits em 1 frase clara em pt-BR. Sem prefácios.",
+                )
+                summary = text.strip()[:300]
+                cost = usage.get("_total_cost_usd") or self._estimate_cost(len(prompt), len(summary))
             except Exception:
                 summary = msg[:300]
                 cost = 0.0

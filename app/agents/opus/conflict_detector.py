@@ -185,10 +185,17 @@ class ConflictDetector(AgentBase):
         # Top-5 candidatos
         decisions_for_prompt = all_signals[:5]
         prompt = self._build_prompt(payload, files, decisions_for_prompt)
+        # Sem system_prompt customizado — deixa o Claude default que tem framing
+        # de análise melhor que o nosso minimal. As outras flags (tools="",
+        # disable-slash-commands, setting-sources="") cortam ~80% do overhead
+        # sem prejudicar raciocínio.
+        sys_prompt = None
 
         try:
-            response = await self._claude_call(prompt, max_tokens=512, timeout=120)
-            cost = self._estimate_cost(len(prompt), len(response))
+            response, usage = await self._claude_call(
+                prompt, max_tokens=512, timeout=120, system_prompt=sys_prompt,
+            )
+            cost = usage.get("_total_cost_usd") or self._estimate_cost(len(prompt), len(response))
         except Exception as e:
             return AgentResult(status="error", error_message=f"{self.MODEL} call falhou: {e}", output={"prompt_size": len(prompt)})
 
@@ -210,8 +217,10 @@ class ConflictDetector(AgentBase):
             sonnet_verdict = verdict
             self.MODEL = "opus"
             try:
-                response2 = await self._claude_call(prompt, max_tokens=512, timeout=120)
-                cost += self._estimate_cost(len(prompt), len(response2))
+                response2, usage2 = await self._claude_call(
+                    prompt, max_tokens=512, timeout=120, system_prompt=sys_prompt,
+                )
+                cost += usage2.get("_total_cost_usd") or self._estimate_cost(len(prompt), len(response2))
                 verdict2 = self._parse_verdict(response2)
                 if verdict2:
                     opus_score = verdict2.get("score") or 0
@@ -477,6 +486,16 @@ class ConflictDetector(AgentBase):
         elif "files" in payload and isinstance(payload["files"], list):
             files.extend(payload["files"])
         return [f for f in files if f and isinstance(f, str)]
+
+    def _system_prompt(self) -> str:
+        return (
+            "Você é um detector de conflitos entre mudanças de código atuais e decisões "
+            "arquiteturais passadas. Score 0.0 = sem conflito (mudanças consistentes, "
+            "refactor neutro, bug fix, feature ortogonal). Score 1.0 = conflito explícito "
+            "(reverte código adicionado pela decisão, remove proteção que ela estabeleceu, "
+            "reintroduz padrão eliminado). Use 0.7+ apenas em conflitos diretos. "
+            "Responda APENAS JSON válido, sem ``` nem prefácio."
+        )
 
     def _build_prompt(self, payload: dict, files: list[str], decisions: list[dict]) -> str:
         files_str = "\n".join(f"- {f}" for f in files[:5])

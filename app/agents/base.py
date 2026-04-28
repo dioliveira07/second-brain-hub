@@ -71,15 +71,31 @@ class AgentBase:
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
-    async def _claude_call(self, prompt: str, *, max_tokens: int = 1024, timeout: int = 120) -> str:
-        """Invoca o binário claude local. Bloqueante — usa to_thread.
+    async def _claude_call(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int = 1024,
+        timeout: int = 120,
+        system_prompt: str | None = None,
+    ) -> tuple[str, dict]:
+        """Invoca claude CLI em modo agent-friendly. Retorna (result_text, usage_dict).
 
-        HOME é redirecionado para /tmp/agent-home pra evitar write em
-        /root/.claude.json (que está RO via bind mount). Config é copiada
-        do host na primeira call.
+        Flags otimizadas para máquinas:
+        - --tools ""            : sem tools (sem risco de tool calls)
+        - --effort low          : reduz extended thinking
+        - --output-format json  : output estruturado com métricas
+        - --disable-slash-commands: pula carregamento de skills
+        - --setting-sources ""  : pula CLAUDE.md global, settings, plugins
+        - --system-prompt       : substitui o system prompt default (4k+ tokens)
+                                  pelo passado como argumento
 
-        Retorna stdout (texto da resposta). Levanta em erro.
+        Resultado: ~8x mais barato e ~4x mais rápido que invocação default.
+        Em conta Max consome menos da janela de 5h.
+
+        HOME isolado em /tmp/agent-home pra evitar write em ~/.claude.json (RO).
         """
+        import json as _json
         import os
         import shutil
 
@@ -90,12 +106,10 @@ class AgentBase:
         try:
             os.makedirs(agent_home, exist_ok=True)
             os.chmod(agent_home, 0o755)
-            # Copia .claude.json se ainda não existe
             target_config = f"{agent_home}/.claude.json"
             if not os.path.exists(target_config) and os.path.exists("/root/.claude.json"):
                 shutil.copy("/root/.claude.json", target_config)
                 os.chmod(target_config, 0o644)
-            # Symlink .claude (que é RO mas só precisa ler)
             target_claude = f"{agent_home}/.claude"
             if not os.path.exists(target_claude) and os.path.exists("/root/.claude"):
                 os.symlink("/root/.claude", target_claude)
@@ -104,14 +118,29 @@ class AgentBase:
 
         env = {**os.environ, "HOME": agent_home}
 
-        def _invoke() -> str:
-            r = subprocess.run(
-                [CLAUDE_BIN, "-p", prompt, "--model", model_id],
-                capture_output=True, text=True, timeout=timeout, env=env,
-            )
+        cmd = [
+            CLAUDE_BIN, "-p", prompt,
+            "--model", model_id,
+            "--tools", "",
+            "--output-format", "json",
+            "--disable-slash-commands",
+            "--setting-sources", "",
+        ]
+        if system_prompt:
+            cmd += ["--system-prompt", system_prompt]
+
+        def _invoke() -> tuple[str, dict]:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
             if r.returncode != 0:
                 raise RuntimeError(f"claude CLI falhou (rc={r.returncode}): {(r.stderr or r.stdout)[:500]}")
-            return r.stdout
+            try:
+                data = _json.loads(r.stdout)
+            except Exception:
+                # fallback: trata como texto puro (casos sem --output-format json)
+                return r.stdout, {}
+            if data.get("is_error"):
+                raise RuntimeError(f"claude CLI erro: {data.get('result', '')[:500]}")
+            return data.get("result", ""), data.get("usage", {}) | {"_total_cost_usd": data.get("total_cost_usd")}
 
         return await asyncio.to_thread(_invoke)
 
