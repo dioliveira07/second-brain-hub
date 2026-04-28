@@ -18,6 +18,13 @@ COLLECTIONS = {
         "size": settings.embedding_dimensions,
         "distance": Distance.COSINE,
     },
+    "memories": {
+        # Memórias canônicas indexadas semanticamente para busca por
+        # similaridade — usado pelo conflict_detector para encontrar
+        # memórias relacionadas ao diff (não só por overlap de tokens).
+        "size": settings.embedding_dimensions,
+        "distance": Distance.COSINE,
+    },
 }
 
 

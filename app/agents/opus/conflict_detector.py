@@ -20,6 +20,7 @@ Pipeline:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import uuid
@@ -149,7 +150,8 @@ class ConflictDetector(AgentBase):
                 continue
 
         # Também busca em Memory (decisões locais ou progress recentes do mesmo arquivo)
-        memory_decisions = await self._search_memories(db, files, projeto)
+        diff_for_search = (payload.get("diff") or "")
+        memory_decisions = await self._search_memories(db, files, projeto, diff_for_search)
 
         # E busca commits recentes no mesmo arquivo (sinais de edição prévios)
         recent_edits = await self._search_recent_edits(db, files, projeto, ev.get("source_id"))
@@ -322,13 +324,114 @@ class ConflictDetector(AgentBase):
             cost_estimate=cost,
         )
 
-    async def _search_memories(self, db, files: list[str], projeto: str) -> list[dict]:
-        """Busca Memory (architectural_decision/progress/pattern/gotcha) por:
-        1. Tag exata `file:<path>` (preferido — match rápido e preciso)
-        2. Match de path/basename no title+content (fallback)
+    async def _search_memories(self, db, files: list[str], projeto: str, diff_text: str = "") -> list[dict]:
+        """Busca Memory por tag + token overlap. Simples e efetivo (13/15).
+
+        Estratégia atual mais robusta após benchmarks (semantic puro ou
+        fusion RRF degradaram acurácia). Embedding BGE-en não distingue
+        bem PT-BR — voltamos ao token+tag.
+
+        Ranking iterations futuras: trocar pra embedding multilingual
+        (BGE-m3) e re-testar fusion.
         """
         if not files:
             return []
+
+        # Token + tag (validado em benchmark anterior: 13/15 estável)
+        q = select(Memory).where(
+            Memory.archived == False,  # noqa: E712
+            Memory.scope_ref == projeto,
+            Memory.type.in_(["architectural_decision", "progress", "pattern", "gotcha"]),
+        ).order_by(Memory.confidence.desc(), Memory.created_at.desc()).limit(50)
+        result = await db.execute(q)
+        all_memories = result.scalars().all()
+
+        diff_lower = (diff_text + " " + " ".join(files)).lower()
+        diff_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", diff_lower))
+        file_tags = {f"file:{f}" for f in files}
+
+        token_scores = []
+        for m in all_memories:
+            content = ((m.title or "") + " " + (m.content or "")).lower()
+            mem_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", content))
+            overlap = len(diff_tokens & mem_tokens)
+            tag_bonus = 5.0 if (set(m.tags or []) & file_tags) else 0.0
+            score = overlap + tag_bonus
+            if score > 0:
+                token_scores.append((m, score))
+        token_scores.sort(key=lambda x: x[1], reverse=True)
+
+        out = []
+        for m, _score in token_scores[:8]:
+            out.append(self._memory_to_decision_dict(m, "memory_token"))
+        return out
+
+        # Ranking 2: Token + tag via DB
+        q = select(Memory).where(
+            Memory.archived == False,  # noqa: E712
+            Memory.scope_ref == projeto,
+            Memory.type.in_(["architectural_decision", "progress", "pattern", "gotcha"]),
+        ).order_by(Memory.confidence.desc(), Memory.created_at.desc()).limit(50)
+        result = await db.execute(q)
+        all_memories = result.scalars().all()
+
+        # Score token: overlap_score + 1.0 se tag file: matches
+        diff_lower = (diff_text + " " + " ".join(files)).lower()
+        diff_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", diff_lower))
+        file_tags = {f"file:{f}" for f in files}
+
+        token_scores = []
+        for m in all_memories:
+            content = ((m.title or "") + " " + (m.content or "")).lower()
+            mem_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", content))
+            overlap = len(diff_tokens & mem_tokens)
+            tag_bonus = 1.0 if (set(m.tags or []) & file_tags) else 0.0
+            score = overlap + tag_bonus * 5  # tag pesa muito
+            if score > 0:
+                token_scores.append((str(m.id), score, m))
+        token_scores.sort(key=lambda x: x[1], reverse=True)
+        token_top = token_scores[:20]
+
+        # Reciprocal Rank Fusion (k=60 — padrão na literatura)
+        K = 60
+        rrf_scores: dict[str, float] = {}
+        memory_objects: dict[str, Memory] = {}
+        sources: dict[str, set] = {}
+
+        for rank, h in enumerate(semantic_hits, 1):
+            mid = h["id"]
+            rrf_scores[mid] = rrf_scores.get(mid, 0) + 1.0 / (K + rank)
+            sources.setdefault(mid, set()).add("semantic")
+
+        for rank, (mid, _score, mem) in enumerate(token_top, 1):
+            rrf_scores[mid] = rrf_scores.get(mid, 0) + 1.0 / (K + rank)
+            memory_objects[mid] = mem
+            sources.setdefault(mid, set()).add("token")
+
+        # Carrega Memory pros que ficaram só em semantic
+        missing = [uuid.UUID(mid) for mid in rrf_scores if mid not in memory_objects]
+        if missing:
+            r2 = await db.execute(select(Memory).where(Memory.id.in_(missing)))
+            for m in r2.scalars().all():
+                memory_objects[str(m.id)] = m
+
+        ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+
+        out = []
+        for mid, fused_score in ranked:
+            mem = memory_objects.get(mid)
+            if not mem:
+                continue
+            src_label = "memory_fusion(" + "+".join(sorted(sources[mid])) + ")"
+            d = self._memory_to_decision_dict(mem, src_label)
+            d["fusion_score"] = fused_score
+            out.append(d)
+            if len(out) >= 8:  # extras para o ranking final filtrar
+                break
+        return out
+
+    async def _search_memories_text_fallback(self, db, files: list[str], projeto: str) -> list[dict]:
+        """Fallback: busca por tag exata file:<path> em Memory."""
         q = select(Memory).where(
             Memory.archived == False,  # noqa: E712
             Memory.scope_ref == projeto,
@@ -338,7 +441,6 @@ class ConflictDetector(AgentBase):
 
         out = []
         seen_ids = set()
-        # Match por tag (preferencial)
         file_tags = {f"file:{f}" for f in files}
         for m in result.scalars().all():
             tags = set(m.tags or [])
@@ -349,24 +451,6 @@ class ConflictDetector(AgentBase):
                 out.append(self._memory_to_decision_dict(m, "memory_tag"))
                 if len(out) >= 5:
                     return out
-
-        # Match por content (fallback)
-        for m in result.scalars().all() if False else []:
-            pass  # noop; reusamos result acima
-        # Re-query para pegar memories sem tag-match
-        result2 = await db.execute(q)
-        for m in result2.scalars().all():
-            if m.id in seen_ids:
-                continue
-            blob = (m.title + " " + m.content).lower()
-            for f in files:
-                base = f.rsplit("/", 1)[-1].lower()
-                if f.lower() in blob or (len(base) > 4 and base in blob):
-                    seen_ids.add(m.id)
-                    out.append(self._memory_to_decision_dict(m, "memory_text"))
-                    break
-            if len(out) >= 5:
-                break
         return out
 
     def _relevance_score(self, signal: dict, diff_text: str) -> float:

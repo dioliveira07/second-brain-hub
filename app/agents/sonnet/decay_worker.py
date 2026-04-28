@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
 from app.db.models import Memory
+from app.services import memory_qdrant
 
 
 # half-life em horas por tipo
@@ -41,6 +44,7 @@ class DecayWorker(AgentBase):
         now = datetime.now(timezone.utc)
         decayed = 0
         archived = 0
+        archived_ids: list = []
 
         # 1. memórias com TTL ainda dentro do prazo → decai confidence
         for mem_type, half_life_h in HALF_LIFE_HOURS.items():
@@ -64,6 +68,7 @@ class DecayWorker(AgentBase):
                 if mem.confidence < 0.1:
                     mem.archived = True
                     archived += 1
+                    archived_ids.append(mem.id)
 
         # 2. memórias com expires_at no passado → archived
         r = await db.execute(
@@ -76,8 +81,16 @@ class DecayWorker(AgentBase):
         for mem in r.scalars().all():
             mem.archived = True
             archived += 1
+            archived_ids.append(mem.id)
 
         await db.commit()
+
+        # Remove do Qdrant em batch
+        for mid in archived_ids:
+            try:
+                await asyncio.to_thread(memory_qdrant.remove_memory, mid)
+            except Exception:
+                pass
 
         return AgentResult(output={
             "decayed": decayed,

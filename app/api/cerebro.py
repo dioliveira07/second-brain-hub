@@ -4,6 +4,7 @@ F2: padrões de erro por projeto
 F3: afinidade dev × projeto
 F6: continuidade entre devs (última sessão por projeto)
 """
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -28,6 +29,7 @@ from app.db.models import (
     Memory, Event, CausalEdge, AgentRun, AgentSubscription,
 )
 from app.services import event_bus as _event_bus
+from app.services import memory_qdrant as _memory_qdrant
 
 router = APIRouter()
 
@@ -1703,6 +1705,12 @@ async def criar_memory(payload: MemoryCreatePayload, db: AsyncSession = Depends(
     db.add(mem)
     await db.flush()
 
+    # Indexa no Qdrant para busca semântica futura
+    try:
+        await asyncio.to_thread(_memory_qdrant.index_memory, mem)
+    except Exception:
+        pass  # falha silenciosa — DB é authoritative
+
     await _event_bus.publish_event(
         db,
         type="memory.created",
@@ -1789,6 +1797,10 @@ async def atualizar_memory(memory_id: str, payload: MemoryUpdatePayload, db: Asy
     if payload.archived is not None:
         mem.archived = payload.archived
         if payload.archived:
+            try:
+                await asyncio.to_thread(_memory_qdrant.remove_memory, mem.id)
+            except Exception:
+                pass
             await _event_bus.publish_event(
                 db,
                 type="memory.archived",
@@ -1797,6 +1809,12 @@ async def atualizar_memory(memory_id: str, payload: MemoryUpdatePayload, db: Asy
                 source_table="memories",
                 source_id=mem.id,
             )
+        else:
+            # Re-indexa se desarquivado
+            try:
+                await asyncio.to_thread(_memory_qdrant.index_memory, mem)
+            except Exception:
+                pass
         changed = True
 
     if changed:
@@ -1816,6 +1834,10 @@ async def arquivar_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
     if not mem:
         raise HTTPException(status_code=404, detail="Memória não encontrada")
     mem.archived = True
+    try:
+        await asyncio.to_thread(_memory_qdrant.remove_memory, mem.id)
+    except Exception:
+        pass
     await _event_bus.publish_event(
         db,
         type="memory.archived",

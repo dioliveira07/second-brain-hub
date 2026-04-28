@@ -15,9 +15,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
 from app.db.models import Memory, CausalEdge, DevSignal
+from app.services import memory_qdrant
 
 
 async def _files_around_commit(db: AsyncSession, dev: str, projeto: str, ts: datetime, window_min: int = 10) -> list[str]:
@@ -128,6 +131,12 @@ class MemoryWriter(AgentBase):
         db.add(mem)
         await db.flush()
 
+        # Indexa no Qdrant para busca semântica
+        try:
+            await asyncio.to_thread(memory_qdrant.index_memory, mem)
+        except Exception:
+            pass
+
         # liga memory ↔ decision
         if decision_id:
             try:
@@ -154,6 +163,8 @@ class MemoryWriter(AgentBase):
         sha = payload.get("sha", "?")
         branch = payload.get("branch", "?")
         files_changed = payload.get("files_changed", 0)
+        body = payload.get("body") or msg  # body completo do commit (HB ≥20260428.2)
+        commit_files = payload.get("files") or []  # lista de arquivos do commit
 
         # Para commits, usa Sonnet para extrair "o que foi feito" se mensagem for >50 chars
         # Para mensagens curtas, gera memória direta sem chamar LLM
@@ -180,10 +191,14 @@ class MemoryWriter(AgentBase):
             summary = msg
             cost = 0.0
 
-        # Enriquece com arquivos editados próximos ao commit (10min antes)
-        ts_str = ev.get("ts")
-        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
-        files = await _files_around_commit(db, ev.get("actor", ""), ev.get("projeto", ""), ts)
+        # Arquivos do commit: priorize lista do payload (HB ≥20260428.2);
+        # fallback para arquivos editados ~10min antes via DevSignal.
+        if commit_files:
+            files = commit_files[:30]
+        else:
+            ts_str = ev.get("ts")
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else datetime.now(timezone.utc)
+            files = await _files_around_commit(db, ev.get("actor", ""), ev.get("projeto", ""), ts)
 
         tags = []
         if branch:
@@ -191,14 +206,17 @@ class MemoryWriter(AgentBase):
         for f in files:
             tags.append(f"file:{f}")
 
+        # Content rico: subject + body completo + lista de arquivos
         content_lines = [
             f"Commit {sha} por {ev.get('actor', '?')} em {branch}",
             "",
-            msg,
+            body[:4000] if body else msg,
         ]
         if files:
             content_lines.append("")
-            content_lines.append(f"Arquivos tocados (até 10min antes): {', '.join(files[:10])}")
+            content_lines.append(f"Arquivos alterados ({len(files)}):")
+            for f in files[:20]:
+                content_lines.append(f"  - {f}")
 
         mem = Memory(
             type="progress",
@@ -214,6 +232,12 @@ class MemoryWriter(AgentBase):
         )
         db.add(mem)
         await db.flush()
+
+        # Indexa no Qdrant
+        try:
+            await asyncio.to_thread(memory_qdrant.index_memory, mem)
+        except Exception:
+            pass
 
         return AgentResult(
             output={"memory_id": str(mem.id), "type": "progress", "summary_length": len(summary), "files_inferred": len(files)},
