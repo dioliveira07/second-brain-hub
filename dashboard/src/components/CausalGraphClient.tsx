@@ -386,6 +386,8 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [selected, setSelected] = useState<CausalNode | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
 
   // Resize observer (canvas ocupa todo o container disponível)
   useEffect(() => {
@@ -500,6 +502,43 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     const n = nodesById[id];
     if (n) setSelected(n);
   }, [nodesById]);
+
+  // Configura forças anti-overlap quando ref disponível
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg || typeof fg.d3Force !== "function") return;
+
+    // Carrega d3-force runtime pra criar forceCollide
+    let cancelled = false;
+    (async () => {
+      const d3 = await import("d3-force");
+      if (cancelled) return;
+
+      // Collision: raio por tipo (decisão maior, signal menor)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const radiusFn = (node: any): number => {
+        const n = node as GraphNode;
+        if (n.table === "architectural_decisions") return 28;
+        if (n.table === "memories") return 24;
+        return 18;
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fg.d3Force("collide", (d3 as any).forceCollide().radius(radiusFn).strength(0.95).iterations(2));
+
+      // Charge mais forte (repulsão geral)
+      const charge = fg.d3Force("charge");
+      if (charge?.strength) charge.strength(-180);
+
+      // Distância das ligações
+      const link = fg.d3Force("link");
+      if (link?.distance) link.distance(80);
+
+      // Reaquece a simulação pra aplicar
+      try { fg.d3ReheatSimulation?.(); } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [graphData]);
 
   const { edgesIn, edgesOut } = useMemo(() => {
     if (!selected) return { edgesIn: [], edgesOut: [] };
@@ -650,6 +689,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
           </div>
         ) : (
           <ForceGraph2D
+            ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
             width={size.w}
             height={size.h}
