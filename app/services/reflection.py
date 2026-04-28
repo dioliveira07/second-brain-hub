@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.models import IndexedRepo, ArchitecturalDecision
-from app.services import github_client, embeddings
+from app.services import github_client, embeddings, event_bus
 from app.services.qdrant import client as qdrant_client
 from qdrant_client.models import PointStruct
 
@@ -103,6 +103,26 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
             merged_at=datetime.fromisoformat(merged_at_iso.replace("Z", "+00:00")) if merged_at else None,
         )
         db.add(decision)
+        await db.flush()
+
+        await event_bus.publish_event(
+            db,
+            type="decision.merged",
+            actor=details["author"],
+            projeto=full_name,
+            payload={
+                "decision_id": str(decision.id),
+                "pr_number": pr_number,
+                "pr_title": details["title"],
+                "impact_areas": decision.impact_areas,
+                "breaking_changes": decision.breaking_changes,
+                "changed_files": details.get("changed_files", []),
+                "qdrant_point_id": point_id,
+            },
+            source_table="architectural_decisions",
+            source_id=decision.id,
+            ts=decision.merged_at,
+        )
         await db.commit()
 
     return {"pr_number": pr_number, "point_id": point_id, "repo": full_name}

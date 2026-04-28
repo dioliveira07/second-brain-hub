@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import secrets
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
@@ -21,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.db.models import SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage, LocalDev, Notification
+from app.db.models import (
+    SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage,
+    LocalDev, Notification,
+    Memory, Event, CausalEdge, AgentRun,
+)
+from app.services import event_bus as _event_bus
 
 router = APIRouter()
 
@@ -389,19 +395,33 @@ async def get_mensagens_sessao(session_id: str, db: AsyncSession = Depends(get_d
 
 @router.post("/sinal")
 async def registrar_sinal(payload: SinalPayload, db: AsyncSession = Depends(get_db)):
-    """Registra um sinal de atividade (erro, edição, skill)."""
+    """Registra um sinal de atividade (erro, edição, skill) e publica no event bus."""
     ts = datetime.fromisoformat(payload.timestamp.replace("Z", "+00:00"))
     isolated_owner = await get_isolated_owner(payload.dev, db)
-    db.add(DevSignal(
+    signal = DevSignal(
         tipo=payload.tipo,
         dev=payload.dev,
         projeto=payload.projeto,
         dados=payload.dados,
         ts=ts,
         isolated_owner=isolated_owner,
-    ))
+    )
+    db.add(signal)
+    await db.flush()  # popula signal.id
+
+    await _event_bus.publish_event(
+        db,
+        type=f"signal.{payload.tipo}",
+        actor=payload.dev,
+        projeto=payload.projeto,
+        payload=payload.dados or {},
+        source_table="dev_signals",
+        source_id=signal.id,
+        ts=ts,
+    )
+
     await db.commit()
-    return {"status": "ok"}
+    return {"status": "ok", "id": str(signal.id)}
 
 
 # ── F2: Padrões de erro ────────────────────────────────────────────────────────
@@ -1594,6 +1614,347 @@ async def skills_sync(since: str = Query("", description="Commit atual do client
         "commit": commit,
         "file_count": len(files),
         "files": files,
+    }
+
+
+# ── Memória causal proativa — Foundation v2 ─────────────────────────────────
+
+# TTL por tipo de memória (None = permanente).
+MEMORY_TTL = {
+    "progress": timedelta(days=30),     # decay 7d half-life mas só apaga em 30d
+    "context":  timedelta(days=90),     # decay 30d half-life mas só apaga em 90d
+    "session":  timedelta(hours=24),    # gotchas de sessão
+    "architectural_decision": None,
+    "gotcha":   None,
+    "pattern":  None,
+    "personal": None,
+}
+
+
+class MemoryCreatePayload(BaseModel):
+    type: str
+    scope: str = "global"
+    scope_ref: str | None = None
+    title: str
+    content: str
+    tags: list[str] = []
+    confidence: float = 1.0
+    source_type: str | None = None
+    source_ref: str | None = None
+    expires_at: datetime | None = None  # se None, deriva do tipo
+
+
+class MemoryUpdatePayload(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    confidence: float | None = None
+    archived: bool | None = None
+
+
+@router.post("/memory")
+async def criar_memory(payload: MemoryCreatePayload, db: AsyncSession = Depends(get_db)):
+    """Cria uma memória. expires_at é inferido do tipo se não fornecido."""
+    expires_at = payload.expires_at
+    if expires_at is None:
+        ttl = MEMORY_TTL.get(payload.type)
+        if ttl:
+            expires_at = datetime.now(timezone.utc) + ttl
+
+    mem = Memory(
+        type=payload.type,
+        scope=payload.scope,
+        scope_ref=payload.scope_ref,
+        title=payload.title,
+        content=payload.content,
+        tags=payload.tags,
+        confidence=payload.confidence,
+        source_type=payload.source_type,
+        source_ref=payload.source_ref,
+        expires_at=expires_at,
+    )
+    db.add(mem)
+    await db.flush()
+
+    await _event_bus.publish_event(
+        db,
+        type="memory.created",
+        actor="system",
+        projeto=payload.scope_ref if payload.scope == "project" else None,
+        payload={"memory_id": str(mem.id), "type": payload.type, "title": payload.title[:200]},
+        source_table="memories",
+        source_id=mem.id,
+    )
+    await db.commit()
+    return _memory_to_dict(mem)
+
+
+@router.get("/memory")
+async def listar_memories(
+    type: str | None = None,
+    scope: str | None = None,
+    scope_ref: str | None = None,
+    projeto: str | None = None,  # alias para scope_ref quando scope=project
+    tag: str | None = None,
+    archived: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista memórias com filtros."""
+    q = select(Memory).where(Memory.archived == archived)
+    if type:
+        q = q.where(Memory.type == type)
+    if scope:
+        q = q.where(Memory.scope == scope)
+    ref = scope_ref or projeto
+    if ref:
+        q = q.where(Memory.scope_ref == ref)
+    if tag:
+        # JSONB contains array element
+        q = q.where(Memory.tags.op("@>")([tag]))
+    q = q.order_by(Memory.confidence.desc(), Memory.updated_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(q)
+    return [_memory_to_dict(m) for m in result.scalars().all()]
+
+
+@router.get("/memory/{memory_id}")
+async def get_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
+    """Busca uma memória por ID e incrementa access_count."""
+    try:
+        mid = uuid.UUID(memory_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    result = await db.execute(select(Memory).where(Memory.id == mid))
+    mem = result.scalar_one_or_none()
+    if not mem:
+        raise HTTPException(status_code=404, detail="Memória não encontrada")
+    mem.access_count = (mem.access_count or 0) + 1
+    await db.commit()
+    return _memory_to_dict(mem)
+
+
+@router.patch("/memory/{memory_id}")
+async def atualizar_memory(memory_id: str, payload: MemoryUpdatePayload, db: AsyncSession = Depends(get_db)):
+    """Atualiza campos de uma memória."""
+    try:
+        mid = uuid.UUID(memory_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    result = await db.execute(select(Memory).where(Memory.id == mid))
+    mem = result.scalar_one_or_none()
+    if not mem:
+        raise HTTPException(status_code=404, detail="Memória não encontrada")
+
+    changed = False
+    if payload.title is not None:
+        mem.title = payload.title
+        changed = True
+    if payload.content is not None:
+        mem.content = payload.content
+        changed = True
+    if payload.tags is not None:
+        mem.tags = payload.tags
+        changed = True
+    if payload.confidence is not None:
+        mem.confidence = max(0.0, min(1.0, payload.confidence))
+        changed = True
+    if payload.archived is not None:
+        mem.archived = payload.archived
+        if payload.archived:
+            await _event_bus.publish_event(
+                db,
+                type="memory.archived",
+                actor="system",
+                payload={"memory_id": str(mem.id), "type": mem.type},
+                source_table="memories",
+                source_id=mem.id,
+            )
+        changed = True
+
+    if changed:
+        await db.commit()
+    return _memory_to_dict(mem)
+
+
+@router.delete("/memory/{memory_id}")
+async def arquivar_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
+    """Soft delete: marca archived=true. Hard delete não suportado."""
+    try:
+        mid = uuid.UUID(memory_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    result = await db.execute(select(Memory).where(Memory.id == mid))
+    mem = result.scalar_one_or_none()
+    if not mem:
+        raise HTTPException(status_code=404, detail="Memória não encontrada")
+    mem.archived = True
+    await _event_bus.publish_event(
+        db,
+        type="memory.archived",
+        actor="system",
+        payload={"memory_id": str(mem.id), "type": mem.type},
+        source_table="memories",
+        source_id=mem.id,
+    )
+    await db.commit()
+    return {"status": "archived", "id": str(mem.id)}
+
+
+@router.get("/events")
+async def listar_events(
+    type: str | None = None,
+    type_prefix: str | None = None,  # ex: "signal." pega todos signal.*
+    actor: str | None = None,
+    projeto: str | None = None,
+    since: datetime | None = None,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+):
+    """Timeline unificada de eventos."""
+    q = select(Event)
+    if type:
+        q = q.where(Event.type == type)
+    if type_prefix:
+        q = q.where(Event.type.like(f"{type_prefix}%"))
+    if actor:
+        q = q.where(Event.actor == actor)
+    if projeto:
+        q = q.where(Event.projeto == projeto)
+    if since:
+        q = q.where(Event.ts >= since)
+    q = q.order_by(Event.ts.desc()).limit(min(limit, 500))
+    result = await db.execute(q)
+    return [_event_to_dict(e) for e in result.scalars().all()]
+
+
+@router.get("/causal/{table}/{node_id}")
+async def get_causal_edges(table: str, node_id: str, direction: str = "both", db: AsyncSession = Depends(get_db)):
+    """Retorna edges causais conectadas a um nó.
+
+    direction: 'in' (causes), 'out' (effects), 'both' (default)
+    """
+    try:
+        nid = uuid.UUID(node_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="node_id inválido")
+
+    edges_in = []
+    edges_out = []
+
+    if direction in ("in", "both"):
+        r = await db.execute(
+            select(CausalEdge).where(CausalEdge.effect_table == table, CausalEdge.effect_id == nid)
+        )
+        edges_in = [_edge_to_dict(e) for e in r.scalars().all()]
+
+    if direction in ("out", "both"):
+        r = await db.execute(
+            select(CausalEdge).where(CausalEdge.cause_table == table, CausalEdge.cause_id == nid)
+        )
+        edges_out = [_edge_to_dict(e) for e in r.scalars().all()]
+
+    return {"node": {"table": table, "id": node_id}, "in": edges_in, "out": edges_out}
+
+
+@router.post("/causal")
+async def criar_causal_edge(
+    cause_table: str,
+    cause_id: str,
+    effect_table: str,
+    effect_id: str,
+    relation: str,
+    confidence: float = 1.0,
+    detected_by: str | None = "manual",
+    notes: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria edge causal manualmente. Idempotente via unique constraint."""
+    try:
+        cid = uuid.UUID(cause_id)
+        eid = uuid.UUID(effect_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="IDs inválidos")
+
+    # Verifica se já existe
+    existing = await db.execute(
+        select(CausalEdge).where(
+            CausalEdge.cause_table == cause_table,
+            CausalEdge.cause_id == cid,
+            CausalEdge.effect_table == effect_table,
+            CausalEdge.effect_id == eid,
+            CausalEdge.relation == relation,
+        )
+    )
+    edge = existing.scalar_one_or_none()
+    if edge:
+        edge.confidence = max(edge.confidence, confidence)
+        if notes:
+            edge.notes = notes
+        await db.commit()
+        return _edge_to_dict(edge)
+
+    edge = CausalEdge(
+        cause_table=cause_table,
+        cause_id=cid,
+        effect_table=effect_table,
+        effect_id=eid,
+        relation=relation,
+        confidence=max(0.0, min(1.0, confidence)),
+        detected_by=detected_by,
+        notes=notes,
+    )
+    db.add(edge)
+    await db.commit()
+    return _edge_to_dict(edge)
+
+
+# ── helpers de serialização ─────────────────────────────────────────────────
+
+def _memory_to_dict(m: Memory) -> dict:
+    return {
+        "id": str(m.id),
+        "type": m.type,
+        "scope": m.scope,
+        "scope_ref": m.scope_ref,
+        "title": m.title,
+        "content": m.content,
+        "tags": m.tags or [],
+        "confidence": m.confidence,
+        "access_count": m.access_count,
+        "source_type": m.source_type,
+        "source_ref": m.source_ref,
+        "expires_at": m.expires_at.isoformat() if m.expires_at else None,
+        "archived": m.archived,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+        "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+    }
+
+
+def _event_to_dict(e: Event) -> dict:
+    return {
+        "id": str(e.id),
+        "type": e.type,
+        "actor": e.actor,
+        "projeto": e.projeto,
+        "payload": e.payload or {},
+        "source_table": e.source_table,
+        "source_id": str(e.source_id) if e.source_id else None,
+        "ts": e.ts.isoformat() if e.ts else None,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+    }
+
+
+def _edge_to_dict(c: CausalEdge) -> dict:
+    return {
+        "id": str(c.id),
+        "cause": {"table": c.cause_table, "id": str(c.cause_id)},
+        "effect": {"table": c.effect_table, "id": str(c.effect_id)},
+        "relation": c.relation,
+        "confidence": c.confidence,
+        "detected_by": c.detected_by,
+        "notes": c.notes,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
 
