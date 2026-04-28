@@ -403,7 +403,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     return () => ro.disconnect();
   }, [selected]);
 
-  // Polling 30s
+  // Polling 60s — só atualiza state se IDs realmente mudaram (evita reset da física)
   useEffect(() => {
     const t = setInterval(async () => {
       try {
@@ -411,9 +411,20 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
         params.set("limit", "300");
         if (filterRelation) params.set("relation", filterRelation);
         const r = await fetch(`/painel/api/cerebro-proxy?path=/causal/graph?${params.toString()}`);
-        if (r.ok) setData((await r.json()) as CausalGraphData);
+        if (!r.ok) return;
+        const fresh = (await r.json()) as CausalGraphData;
+        setData((prev) => {
+          // Comparação rápida: mesma quantidade e mesmos IDs em ordem
+          if (prev.nodes.length === fresh.nodes.length
+              && prev.edges.length === fresh.edges.length) {
+            const sameNodes = prev.nodes.every((n, i) => n.id === fresh.nodes[i].id);
+            const sameEdges = prev.edges.every((e, i) => e.id === fresh.edges[i].id);
+            if (sameNodes && sameEdges) return prev;  // não força re-render
+          }
+          return fresh;
+        });
       } catch {}
-    }, 30_000);
+    }, 60_000);
     return () => clearInterval(t);
   }, [filterRelation]);
 
@@ -452,10 +463,38 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     return c;
   }, [data.edges]);
 
-  const graphData = useMemo(() => ({
-    nodes: visibleNodes.map(n => ({ ...n })),
-    links: filteredEdges.map(e => ({ ...e })),
-  }), [visibleNodes, filteredEdges]);
+  // Preserva referências dos nodes/edges entre renders para que o force-graph
+  // não reset a física quando os mesmos nodes ainda existem.
+  const lastGraphRef = useRef<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] });
+  const graphData = useMemo(() => {
+    const prevNodes = new Map(lastGraphRef.current.nodes.map(n => [n.id, n]));
+    const prevLinks = new Map(lastGraphRef.current.links.map(l => [l.id, l]));
+
+    const newNodes = visibleNodes.map(n => {
+      const existing = prevNodes.get(n.id);
+      if (existing) {
+        // reusa o objeto (preserva x/y/vx/vy) — só atualiza meta/label
+        Object.assign(existing, n);
+        return existing;
+      }
+      return { ...n };
+    });
+
+    const newLinks = filteredEdges.map(e => {
+      const existing = prevLinks.get(e.id);
+      // links precisam reusar refs também — força não reseta
+      if (existing) {
+        existing.relation = e.relation;
+        existing.confidence = e.confidence;
+        existing.detected_by = e.detected_by;
+        return existing;
+      }
+      return { ...e };
+    });
+
+    lastGraphRef.current = { nodes: newNodes, links: newLinks };
+    return lastGraphRef.current;
+  }, [visibleNodes, filteredEdges]);
 
   const handleNavigate = useCallback((id: string) => {
     const n = nodesById[id];
@@ -475,70 +514,71 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     const color = NODE_COLOR[node.type] || "#06b6d4";
     const isDecision = node.table === "architectural_decisions";
     const isMemory = node.table === "memories";
-    const r = isDecision ? 9 : isMemory ? 7 : 5;
+    // Maior — o force-graph tem nodeRelSize=8 mas drawNode replace ignora isso
+    const r = isDecision ? 16 : isMemory ? 13 : 9;
     const x = node.x || 0;
     const y = node.y || 0;
 
     // Glow
     ctx.shadowColor = color;
-    ctx.shadowBlur = isDecision ? 18 : isMemory ? 14 : 8;
+    ctx.shadowBlur = isDecision ? 22 : isMemory ? 16 : 10;
 
-    // Body (rect pra decisões, círculo pro resto — como você sugeriu antes)
+    // Body (rect pra decisões, círculo pro resto)
     ctx.beginPath();
     if (isDecision) {
-      const halfR = r;
-      ctx.rect(x - halfR, y - halfR, halfR * 2, halfR * 2);
+      ctx.rect(x - r, y - r, r * 2, r * 2);
     } else {
       ctx.arc(x, y, r, 0, 2 * Math.PI);
     }
 
-    // Fill 5% opacity da cor
-    ctx.fillStyle = `${color}1a`;
+    // Fill 10% opacity da cor (mais visível pra área maior)
+    ctx.fillStyle = `${color}26`;
     ctx.fill();
 
     // Stroke neon
     ctx.strokeStyle = color;
-    ctx.lineWidth = (isDecision ? 2 : 1.5) / globalScale;
+    ctx.lineWidth = (isDecision ? 2.2 : 1.7) / globalScale;
     ctx.stroke();
 
     // Selection ring
     if (selected?.id === node.id) {
       ctx.shadowBlur = 0;
       ctx.beginPath();
-      ctx.arc(x, y, r + 4, 0, 2 * Math.PI);
+      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
       ctx.strokeStyle = "#fbbf24";
-      ctx.lineWidth = 2 / globalScale;
+      ctx.lineWidth = 2.5 / globalScale;
       ctx.stroke();
     }
 
     ctx.shadowBlur = 0;
 
-    // Ícone interno (sempre visível)
+    // Ícone interno (escala com o node)
     const icon = TABLE_ICON[node.table] || "•";
-    ctx.font = `${(isDecision ? 11 : 9) / globalScale * globalScale}px 'Fira Code', monospace`;
+    ctx.font = `${isDecision ? 16 : isMemory ? 13 : 10}px 'Fira Code', monospace`;
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(icon, x, y);
 
-    // Label (visível em zoom mais próximo, com fundo escuro tipo /graph)
-    if (globalScale > 0.9) {
-      const label = node.label.length > 40 ? node.label.slice(0, 40) + "…" : node.label;
-      const fontSize = isDecision ? 10 : 9;
+    // Label compacta — só visível em zoom 1.5+ pra não poluir
+    if (globalScale > 1.4) {
+      const maxLen = 22;
+      const label = node.label.length > maxLen ? node.label.slice(0, maxLen) + "…" : node.label;
+      const fontSize = 7;  // pequena
       ctx.font = `${fontSize}px 'Fira Code', monospace`;
       const textWidth = ctx.measureText(label).width;
-      const padX = 5;
+      const padX = 4;
       const padY = 2;
-      const labelY = y + r + 9;
+      const labelY = y + r + 7;
 
-      // Fundo escuro
-      ctx.fillStyle = "rgba(2,6,23,0.85)";
+      // Fundo escuro arredondado
+      ctx.fillStyle = "rgba(2,6,23,0.88)";
       ctx.beginPath();
       const rx = x - textWidth / 2 - padX;
       const ry = labelY - fontSize / 2 - padY;
       const rw = textWidth + padX * 2;
       const rh = fontSize + padY * 2;
-      const radius = 3;
+      const radius = 2.5;
       ctx.moveTo(rx + radius, ry);
       ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, radius);
       ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, radius);
@@ -547,7 +587,6 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       ctx.closePath();
       ctx.fill();
 
-      // Text
       ctx.fillStyle = color;
       ctx.fillText(label, x, labelY);
     }
@@ -643,11 +682,15 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             width={size.w}
             height={size.h}
             backgroundColor="rgba(2,6,23,0)"
-            nodeRelSize={5}
+            nodeRelSize={13}
+            nodeVal={(n) => {
+              const node = n as GraphNode;
+              return node.table === "architectural_decisions" ? 12 : node.table === "memories" ? 8 : 4;
+            }}
             linkColor={(l) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
             linkWidth={(l) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
-            linkDirectionalArrowLength={6}
-            linkDirectionalArrowRelPos={1}
+            linkDirectionalArrowLength={7}
+            linkDirectionalArrowRelPos={0.92}
             linkDirectionalArrowColor={(l) => RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}
             linkDirectionalParticles={(l) => ((l as GraphLink).relation === "contradicts" ? 3 : 0)}
             linkDirectionalParticleSpeed={0.008}
@@ -659,10 +702,20 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             }}
             nodeCanvasObjectMode={() => "replace"}
             nodeCanvasObject={(node, ctx, globalScale) => drawNode(node as GraphNode, ctx, globalScale)}
+            nodePointerAreaPaint={(node, color, ctx) => {
+              const n = node as GraphNode;
+              const r = n.table === "architectural_decisions" ? 16 : n.table === "memories" ? 13 : 9;
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              ctx.arc(n.x || 0, n.y || 0, r + 2, 0, 2 * Math.PI);
+              ctx.fill();
+            }}
             onNodeClick={(node) => setSelected(node as CausalNode)}
-            cooldownTicks={120}
-            d3VelocityDecay={0.32}
-            d3AlphaDecay={0.025}
+            cooldownTicks={400}
+            warmupTicks={50}
+            d3VelocityDecay={0.4}
+            d3AlphaDecay={0.018}
+            enableNodeDrag={true}
           />
         )}
       </div>
