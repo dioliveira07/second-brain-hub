@@ -45,6 +45,14 @@ celery_app.conf.update(
             "task": "app.worker.decay_memories",
             "schedule": crontab(hour=3, minute=0),
         },
+        "pattern-detector-daily-4am": {
+            "task": "app.worker.run_pattern_detector",
+            "schedule": crontab(hour=4, minute=0),
+        },
+        "daily-digest-19h": {
+            "task": "app.worker.run_daily_digest",
+            "schedule": crontab(hour=19, minute=0),
+        },
     },
 )
 
@@ -274,13 +282,30 @@ def decay_memories():
 
 
 async def _decay_memories_async():
+    return await _run_cron_agent("decay_worker")
+
+
+@celery_app.task(name="app.worker.run_pattern_detector")
+def run_pattern_detector():
+    import asyncio
+    return asyncio.run(_run_cron_agent("pattern_detector"))
+
+
+@celery_app.task(name="app.worker.run_daily_digest")
+def run_daily_digest():
+    import asyncio
+    return asyncio.run(_run_cron_agent("daily_digest"))
+
+
+async def _run_cron_agent(name: str):
+    """Roda agente cron-trigger genericamente. Usa engine fresh por task."""
     from app.agents import registry
     from app.agents.base import execute_agent
 
     registry.ensure_loaded()
-    agent = registry.get_agent("decay_worker")
+    agent = registry.get_agent(name)
     if not agent:
-        return {"error": "decay_worker não registrado"}
+        return {"error": f"{name} não registrado"}
 
     fresh_engine, fresh_factory = _fresh_session_factory()
     try:

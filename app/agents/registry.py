@@ -65,10 +65,13 @@ def _autoload():
     Chamado uma vez no startup ou no primeiro list_agents() call.
     """
     # Sonnet workers
-    from app.agents.sonnet import memory_writer  # noqa: F401
-    from app.agents.sonnet import decay_worker   # noqa: F401
+    from app.agents.sonnet import memory_writer       # noqa: F401
+    from app.agents.sonnet import decay_worker        # noqa: F401
+    from app.agents.sonnet import pattern_detector    # noqa: F401
+    from app.agents.sonnet import daily_digest        # noqa: F401
     # Opus workers
-    from app.agents.opus import conflict_detector  # noqa: F401
+    from app.agents.opus import conflict_detector     # noqa: F401
+    from app.agents.opus import stuck_detector        # noqa: F401
 
 
 _autoloaded = False
