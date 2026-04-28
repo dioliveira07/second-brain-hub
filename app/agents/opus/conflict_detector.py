@@ -34,12 +34,23 @@ from app.agents.registry import register
 from app.db.models import Memory, CausalEdge, DevSignal
 
 
+# Threshold mínimo de relevância (overlap de tokens diff↔candidato) para chamar Opus.
+# Abaixo disso, retorna sem conflito direto — economiza chamadas Opus
+# quando a mudança não tem relação semântica com decisões existentes.
+# Calibrado pra ~1.0: 1 token overlap OU bônus de memory source já passa.
+RELEVANCE_THRESHOLD = 1.0
+
+# Dedupe: mesmo dev editando o mesmo arquivo em <DEDUPE_MIN min não dispara de novo.
+DEDUPE_MIN = 10
+
+
 @register
 class ConflictDetector(AgentBase):
     NAME = "conflict_detector"
     MODEL = "opus"
+    # Só commit_realizado (pontos de decisão real, não edits intermediários WIP).
+    # Arquivo_editado seria 10x o volume com sinal mais ruidoso.
     SUBSCRIBES = (
-        "signal.arquivo_editado",
         "signal.commit_realizado",
     )
 
@@ -53,6 +64,13 @@ class ConflictDetector(AgentBase):
         files = self._extract_files(payload)
         if not files:
             return AgentResult(status="done", output={"skipped": True, "reason": "sem arquivos no payload"})
+
+        # Dedupe via Redis: evita re-disparar para mesmo dev+arquivo em DEDUPE_MIN min.
+        # Bypass via input.skip_dedupe (útil para testes e replays).
+        if not (input or {}).get("skip_dedupe") and not payload.get("skip_dedupe"):
+            dedupe_skip = await self._check_dedupe(actor, files)
+            if dedupe_skip:
+                return AgentResult(status="done", output={"skipped": True, "reason": "dedupe", "files": files[:5]})
 
         # Busca decisões relevantes no Qdrant (uma busca por arquivo, dedup)
         try:
@@ -114,6 +132,22 @@ class ConflictDetector(AgentBase):
         # Ranquear por overlap semântico com o diff (palavras-chave compartilhadas)
         diff_text = (payload.get("diff") or "").lower()
         all_signals = self._rank_by_relevance(all_signals, diff_text)
+
+        # Pre-filter: skip Opus se nenhum candidato tem overlap suficiente.
+        # Score do top é overlap_count + bônus de fonte. Se for < threshold,
+        # significa que apesar de ter histórico no arquivo, semanticamente
+        # nada se relaciona à mudança atual.
+        top_score = self._relevance_score(all_signals[0], diff_text) if all_signals else 0.0
+        if top_score < RELEVANCE_THRESHOLD:
+            return AgentResult(status="done", output={
+                "skipped": True,
+                "reason": f"relevância insuficiente (top={top_score:.1f} < {RELEVANCE_THRESHOLD})",
+                "candidates_count": len(all_signals),
+                "files": files[:5],
+            })
+
+        # Marca dedupe AGORA (antes do Opus call) para evitar burst de triggers paralelos
+        await self._mark_dedupe(actor, files)
 
         # Top-5 (Opus tem capacidade de filtrar ruído entre múltiplos candidatos)
         decisions_for_prompt = all_signals[:5]
@@ -248,25 +282,57 @@ class ConflictDetector(AgentBase):
                 break
         return out
 
-    def _rank_by_relevance(self, signals: list[dict], diff_text: str) -> list[dict]:
-        """Ranqueia signals por overlap de tokens com diff_text. Mantém ordem original em empate."""
+    def _relevance_score(self, signal: dict, diff_text: str) -> float:
+        """Score de relevância signal↔diff por overlap de tokens + bônus de fonte."""
         if not diff_text:
-            return signals
-        # tokens significativos (>3 chars, alfanuméricos, lowercase)
+            return 0.0
         diff_tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", diff_text))
         if not diff_tokens:
+            return 0.0
+        text = ((signal.get("pr_title") or "") + " " + (signal.get("content") or "")).lower()
+        tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", text))
+        overlap = len(diff_tokens & tokens)
+        bonus = 0.0
+        src = signal.get("source", "")
+        if src.startswith("memory"):
+            bonus += 1.0  # memórias são fonte explícita de decisão
+        if src == "qdrant":
+            bonus += 2.0  # PR mergeado é a fonte mais autoritativa
+        return overlap + bonus
+
+    def _rank_by_relevance(self, signals: list[dict], diff_text: str) -> list[dict]:
+        """Ranqueia signals por relevance score. Mantém ordem original em empate."""
+        if not diff_text:
             return signals
+        return sorted(signals, key=lambda s: self._relevance_score(s, diff_text), reverse=True)
 
-        def score(s: dict) -> float:
-            text = ((s.get("pr_title") or "") + " " + (s.get("content") or "")).lower()
-            tokens = set(re.findall(r"[a-z_][a-z0-9_]{3,}", text))
-            overlap = len(diff_tokens & tokens)
-            # bônus pra memórias (sources mais explícitas que edit_history)
-            bonus = 0.1 if s.get("source", "").startswith("memory") else 0.0
-            bonus += 0.2 if s.get("source") == "qdrant" else 0.0
-            return overlap + bonus
+    async def _check_dedupe(self, dev: str, files: list[str]) -> bool:
+        """True se algum (dev, file) já foi processado em DEDUPE_MIN min."""
+        try:
+            from app.services import event_bus
+            r = await event_bus._get_redis()
+            if not r:
+                return False
+            for f in files[:5]:
+                key = f"cd:dedupe:{dev}:{f}"
+                if await r.exists(key):
+                    return True
+        except Exception:
+            pass
+        return False
 
-        return sorted(signals, key=score, reverse=True)
+    async def _mark_dedupe(self, dev: str, files: list[str]):
+        """Marca (dev, file) como processado, TTL DEDUPE_MIN min."""
+        try:
+            from app.services import event_bus
+            r = await event_bus._get_redis()
+            if not r:
+                return
+            for f in files[:5]:
+                key = f"cd:dedupe:{dev}:{f}"
+                await r.setex(key, DEDUPE_MIN * 60, "1")
+        except Exception:
+            pass
 
     def _memory_to_decision_dict(self, m, source: str) -> dict:
         return {
