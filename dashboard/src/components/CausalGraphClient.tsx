@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { X, ArrowRight } from "lucide-react";
 import type { CausalGraphData, CausalNode, CausalEdgeData } from "@/lib/hub";
 
-// ─── Paleta cyberpunk (alinhada com /graph) ──────────────────────────────────
+const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
+
+// ─── Paleta cyberpunk ────────────────────────────────────────────────────────
 
 const NODE_COLOR: Record<string, string> = {
   // memory types
@@ -24,11 +27,11 @@ const NODE_COLOR: Record<string, string> = {
 };
 
 const RELATION_COLOR: Record<string, string> = {
-  triggered_by:  "#06b6d4",  // cyan
-  contradicts:   "#f87171",  // red — alerta
-  reinforces:    "#22c55e",  // green
-  derived_from:  "#a78bfa",  // violet
-  references:    "#94a3b8",  // slate
+  triggered_by:  "#06b6d4",
+  contradicts:   "#f87171",
+  reinforces:    "#22c55e",
+  derived_from:  "#a78bfa",
+  references:    "#94a3b8",
 };
 
 const TABLE_LABEL: Record<string, string> = {
@@ -45,7 +48,7 @@ const TABLE_ICON: Record<string, string> = {
   events:                  "○",
 };
 
-// ─── Sidebar ─────────────────────────────────────────────────────────────────
+// ─── Sidebar (padronizada com /graph) ───────────────────────────────────────
 
 function NodeSidebar({
   node,
@@ -79,7 +82,6 @@ function NodeSidebar({
   const impact_areas = (meta.impact_areas as string[] | undefined) || [];
   const breaking = meta.breaking_changes as boolean | undefined;
   const actor = meta.actor as string | undefined;
-
   const fullContent = (meta as { content?: string }).content;
 
   return (
@@ -99,7 +101,6 @@ function NodeSidebar({
         boxShadow:      `-8px 0 32px ${accent}10`,
       }}
     >
-      {/* Linha neon no topo */}
       <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${accent}88, transparent)` }} />
 
       {/* Header */}
@@ -149,7 +150,7 @@ function NodeSidebar({
         flex: 1, overflowY: "auto", padding: "0.85rem 1rem",
         display: "flex", flexDirection: "column", gap: "1rem",
       }}>
-        {/* Badges meta */}
+        {/* Badges */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
           {scope && (
             <span style={{
@@ -225,7 +226,6 @@ function NodeSidebar({
           )}
         </div>
 
-        {/* Tags */}
         {tags.length > 0 && (
           <div>
             <div style={{
@@ -251,7 +251,6 @@ function NodeSidebar({
           </div>
         )}
 
-        {/* Impact areas (decisions) */}
         {impact_areas.length > 0 && (
           <div>
             <div style={{
@@ -274,7 +273,6 @@ function NodeSidebar({
           </div>
         )}
 
-        {/* Conteúdo da memória (se tiver) */}
         {fullContent && fullContent.length > 0 && (
           <div>
             <div style={{
@@ -301,7 +299,6 @@ function NodeSidebar({
           </div>
         )}
 
-        {/* Edges in (causes) */}
         {edgesIn.length > 0 && (
           <div>
             <div style={{
@@ -338,7 +335,6 @@ function NodeSidebar({
           </div>
         )}
 
-        {/* Edges out (effects) */}
         {edgesOut.length > 0 && (
           <div>
             <div style={{
@@ -379,88 +375,33 @@ function NodeSidebar({
   );
 }
 
-// ─── Transform p/ G6 ─────────────────────────────────────────────────────────
-
-function buildIcon(node: CausalNode): string {
-  return TABLE_ICON[node.table] || "•";
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformData(nodes: CausalNode[], edges: CausalEdgeData[]): any {
-  const g6Nodes = nodes.map((n) => {
-    const color = NODE_COLOR[n.type] || "#06b6d4";
-    const isMemory = n.table === "memories";
-    const isDecision = n.table === "architectural_decisions";
-    const size = isDecision ? 50 : isMemory ? 42 : 30;
-
-    return {
-      id: n.id,
-      style: {
-        size,
-        fill: `${color}0d`,
-        stroke: color,
-        lineWidth: isDecision ? 2.5 : isMemory ? 2 : 1.5,
-        shadowColor: color,
-        shadowBlur: isDecision ? 22 : isMemory ? 16 : 8,
-
-        label: isDecision || isMemory,
-        labelText: n.label.length > 38 ? n.label.slice(0, 38) + "…" : n.label,
-        labelFill: color,
-        labelFontFamily: "'Fira Code', monospace",
-        labelFontSize: isDecision ? 11 : 10,
-        labelMaxWidth: 200,
-        labelOffsetY: isDecision ? 8 : 6,
-        labelWordWrap: false,
-        labelBackground: true,
-        labelBackgroundFill: "rgba(2,6,23,0.85)",
-        labelBackgroundRadius: 3,
-        labelBackgroundPadding: [2, 7, 2, 7],
-
-        iconText: buildIcon(n),
-        iconFill: color,
-        iconFontSize: isDecision ? 14 : 12,
-        iconFontFamily: "'Fira Code', monospace",
-      },
-      data: { ...n, originalLabel: n.label },
-    };
-  });
-
-  const g6Edges = edges.map((e, i) => {
-    const color = RELATION_COLOR[e.relation] || "#94a3b8";
-    const isContradicts = e.relation === "contradicts";
-
-    return {
-      id: `edge-${i}`,
-      source: e.source,
-      target: e.target,
-      style: {
-        stroke: `${color}55`,
-        lineWidth: isContradicts ? 1.5 : 1,
-        opacity: 0.75,
-        lineDash: isContradicts ? [4, 4] : [6, 5],
-        shadowColor: color,
-        shadowBlur: isContradicts ? 5 : 3,
-        endArrow: true,
-        endArrowFill: color,
-        endArrowSize: 6,
-      },
-      data: { relation: e.relation, confidence: e.confidence, edgeId: e.id },
-    };
-  });
-
-  return { nodes: g6Nodes, edges: g6Edges };
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
+
+type GraphNode = CausalNode & { x?: number; y?: number; vx?: number; vy?: number };
+type GraphLink = CausalEdgeData & { source: string | GraphNode; target: string | GraphNode };
 
 export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const graphRef = useRef<any>(null);
+
+  // Resize observer (canvas ocupa todo o container disponível)
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const sidebarOpen = !!selected;
+        setSize({
+          w: e.contentRect.width - (sidebarOpen ? 320 : 0),
+          h: Math.max(420, e.contentRect.height),
+        });
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [selected]);
 
   // Polling 30s
   useEffect(() => {
@@ -482,18 +423,16 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   }, [data.edges, filterRelation]);
 
   const visibleNodeIds = useMemo(() => {
+    if (!filterRelation) return null;
     const s = new Set<string>();
-    for (const e of filteredEdges) {
-      s.add(e.source);
-      s.add(e.target);
-    }
+    for (const e of filteredEdges) { s.add(e.source); s.add(e.target); }
     return s;
-  }, [filteredEdges]);
+  }, [filteredEdges, filterRelation]);
 
   const visibleNodes = useMemo(() => {
-    if (!filterRelation) return data.nodes;
+    if (!visibleNodeIds) return data.nodes;
     return data.nodes.filter((n) => visibleNodeIds.has(n.id));
-  }, [data.nodes, visibleNodeIds, filterRelation]);
+  }, [data.nodes, visibleNodeIds]);
 
   const nodesById = useMemo(() => {
     const m: Record<string, CausalNode> = {};
@@ -501,7 +440,6 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     return m;
   }, [data.nodes]);
 
-  // Stats
   const typeStats = useMemo(() => {
     const c: Record<string, number> = {};
     for (const n of data.nodes) c[n.type] = (c[n.type] || 0) + 1;
@@ -514,128 +452,16 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     return c;
   }, [data.edges]);
 
-  // Setup G6
-  useEffect(() => {
-    if (!containerRef.current) {
-      setLoading(false);
-      return;
-    }
-
-    let destroyed = false;
-
-    const init = async () => {
-      try {
-        const { Graph } = await import("@antv/g6");
-        if (destroyed) return;
-
-        const el = containerRef.current!;
-        const width = el.clientWidth || 900;
-        const height = el.clientHeight || 600;
-
-        const graph = new Graph({
-          container: el,
-          width,
-          height,
-          autoResize: true,
-          autoFit: "center",
-          background: "transparent",
-          data: transformData(visibleNodes, filteredEdges),
-          layout: {
-            type: "force",
-            preventOverlap: true,
-            nodeSize: 60,
-            linkDistance: 150,
-            nodeStrength: -200,
-            edgeStrength: 0.4,
-            damping: 0.35,
-          },
-          node: {
-            type: "circle",
-            state: {
-              active: { label: true, lineWidth: 3, shadowBlur: 28, zIndex: 100 },
-              selected: {
-                label: true, lineWidth: 3, shadowBlur: 32,
-                stroke: "#fbbf24", shadowColor: "#fbbf24", zIndex: 100,
-              },
-              inactive: { opacity: 0.18, shadowBlur: 0 },
-            },
-          },
-          edge: {
-            type: "quadratic",
-            state: {
-              active: { opacity: 0.95, lineWidth: 1.6, shadowBlur: 6 },
-              selected: { opacity: 1, lineWidth: 2.2, shadowBlur: 10 },
-              inactive: { opacity: 0.06 },
-            },
-          },
-          behaviors: [
-            "drag-canvas",
-            { type: "zoom-canvas", sensitivity: 0.5, animation: { duration: 200, easing: "ease-out" } },
-            "drag-element",
-            { type: "hover-activate", degree: 1 },
-            "click-select",
-          ],
-          plugins: [],
-        });
-
-        await graph.render();
-
-        // Animação flow nas arestas
-        graph.getEdgeData().forEach((edge: unknown) => {
-          try {
-            const id = (edge as { id: string }).id;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const elx = (graph as any).context?.element?.getElement?.(id);
-            const key = elx?.getShape?.("key") ?? elx?.children?.[0];
-            key?.animate?.(
-              [{ lineDashOffset: 22 }, { lineDashOffset: 0 }],
-              { duration: 5000, iterations: Infinity, easing: "linear" }
-            );
-          } catch {}
-        });
-
-        graph.on("node:click", (evt: unknown) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const e = evt as any;
-          const nodeData = e?.target?.attributes?.data || e?.itemData?.data || e?.detail?.data;
-          if (nodeData?.id) {
-            const n = nodesById[nodeData.id];
-            if (n) setSelected(n);
-          }
-        });
-
-        graphRef.current = graph;
-        setLoading(false);
-      } catch (err) {
-        console.error("G6 init error:", err);
-        setLoading(false);
-      }
-    };
-
-    init();
-
-    return () => {
-      destroyed = true;
-      try { graphRef.current?.destroy?.(); } catch {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Atualiza dados do grafo quando muda filtro/data
-  useEffect(() => {
-    if (!graphRef.current) return;
-    try {
-      graphRef.current.setData(transformData(visibleNodes, filteredEdges));
-      graphRef.current.render();
-    } catch {}
-  }, [visibleNodes, filteredEdges]);
+  const graphData = useMemo(() => ({
+    nodes: visibleNodes.map(n => ({ ...n })),
+    links: filteredEdges.map(e => ({ ...e })),
+  }), [visibleNodes, filteredEdges]);
 
   const handleNavigate = useCallback((id: string) => {
     const n = nodesById[id];
     if (n) setSelected(n);
   }, [nodesById]);
 
-  // Edges in/out do nó selecionado
   const { edgesIn, edgesOut } = useMemo(() => {
     if (!selected) return { edgesIn: [], edgesOut: [] };
     return {
@@ -644,20 +470,106 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     };
   }, [selected, data.edges]);
 
+  // canvas drawing helpers (mesma lógica visual do /graph: fill 5% + stroke neon + glow)
+  const drawNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const color = NODE_COLOR[node.type] || "#06b6d4";
+    const isDecision = node.table === "architectural_decisions";
+    const isMemory = node.table === "memories";
+    const r = isDecision ? 9 : isMemory ? 7 : 5;
+    const x = node.x || 0;
+    const y = node.y || 0;
+
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = isDecision ? 18 : isMemory ? 14 : 8;
+
+    // Body (rect pra decisões, círculo pro resto — como você sugeriu antes)
+    ctx.beginPath();
+    if (isDecision) {
+      const halfR = r;
+      ctx.rect(x - halfR, y - halfR, halfR * 2, halfR * 2);
+    } else {
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+    }
+
+    // Fill 5% opacity da cor
+    ctx.fillStyle = `${color}1a`;
+    ctx.fill();
+
+    // Stroke neon
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (isDecision ? 2 : 1.5) / globalScale;
+    ctx.stroke();
+
+    // Selection ring
+    if (selected?.id === node.id) {
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 4, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+    }
+
+    ctx.shadowBlur = 0;
+
+    // Ícone interno (sempre visível)
+    const icon = TABLE_ICON[node.table] || "•";
+    ctx.font = `${(isDecision ? 11 : 9) / globalScale * globalScale}px 'Fira Code', monospace`;
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon, x, y);
+
+    // Label (visível em zoom mais próximo, com fundo escuro tipo /graph)
+    if (globalScale > 0.9) {
+      const label = node.label.length > 40 ? node.label.slice(0, 40) + "…" : node.label;
+      const fontSize = isDecision ? 10 : 9;
+      ctx.font = `${fontSize}px 'Fira Code', monospace`;
+      const textWidth = ctx.measureText(label).width;
+      const padX = 5;
+      const padY = 2;
+      const labelY = y + r + 9;
+
+      // Fundo escuro
+      ctx.fillStyle = "rgba(2,6,23,0.85)";
+      ctx.beginPath();
+      const rx = x - textWidth / 2 - padX;
+      const ry = labelY - fontSize / 2 - padY;
+      const rw = textWidth + padX * 2;
+      const rh = fontSize + padY * 2;
+      const radius = 3;
+      ctx.moveTo(rx + radius, ry);
+      ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, radius);
+      ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, radius);
+      ctx.arcTo(rx, ry + rh, rx, ry, radius);
+      ctx.arcTo(rx, ry, rx + rw, ry, radius);
+      ctx.closePath();
+      ctx.fill();
+
+      // Text
+      ctx.fillStyle = color;
+      ctx.fillText(label, x, labelY);
+    }
+  }, [selected]);
+
   return (
     <div style={{
       flex: 1, position: "relative", overflow: "hidden", borderRadius: 4,
       background: "rgba(2,6,23,0.6)", display: "flex", flexDirection: "column",
       minHeight: 520,
     }}>
-      {/* Stats overlay */}
+      {/* Stats overlay (top-left, como /graph) */}
       <div style={{
         position: "absolute", top: 12, left: 12, zIndex: 5,
         display: "flex", flexDirection: "column", gap: 8, maxWidth: 360,
       }}>
-        <div className="panel" style={{
-          padding: "0.6rem 0.85rem", background: "rgba(2,8,18,0.8)",
-          backdropFilter: "blur(12px)", borderRadius: 6, border: "1px solid rgba(6,182,212,0.18)",
+        <div style={{
+          padding: "0.6rem 0.85rem",
+          background: "rgba(2,8,18,0.85)",
+          backdropFilter: "blur(12px)",
+          borderRadius: 6,
+          border: "1px solid rgba(6,182,212,0.18)",
         }}>
           <div style={{
             fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
@@ -679,9 +591,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
           </div>
         </div>
 
-        <div className="panel" style={{
-          padding: "0.6rem 0.85rem", background: "rgba(2,8,18,0.8)",
-          backdropFilter: "blur(12px)", borderRadius: 6, border: "1px solid rgba(6,182,212,0.18)",
+        <div style={{
+          padding: "0.6rem 0.85rem",
+          background: "rgba(2,8,18,0.85)",
+          backdropFilter: "blur(12px)",
+          borderRadius: 6,
+          border: "1px solid rgba(6,182,212,0.18)",
         }}>
           <div style={{
             fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
@@ -707,39 +622,51 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
         </div>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div style={{
-          position: "absolute", inset: 0, display: "flex", alignItems: "center",
-          justifyContent: "center", zIndex: 4,
-        }}>
+      {/* Canvas container */}
+      <div ref={containerRef} style={{ flex: 1, minHeight: 480, position: "relative" }}>
+        {data.nodes.length === 0 ? (
           <div style={{
-            width: 32, height: 32, border: "2px solid #0d1f35", borderTopColor: "#06b6d4",
-            borderRadius: "50%", animation: "spin-slow 0.7s linear infinite",
-          }} />
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && data.nodes.length === 0 && (
-        <div style={{
-          position: "absolute", inset: 0, display: "flex", alignItems: "center",
-          justifyContent: "center", color: "#5a7a9a", fontFamily: "var(--mono)",
-          textAlign: "center", padding: "1rem", zIndex: 3,
-        }}>
-          <div>
-            <div style={{ fontSize: "0.85rem", marginBottom: 6 }}>(sem edges causais ainda)</div>
-            <div style={{ fontSize: "0.7rem", color: "#3a5a7a" }}>
-              memory_writer e conflict_detector criam edges automaticamente conforme rodam
+            position: "absolute", inset: 0, display: "flex", alignItems: "center",
+            justifyContent: "center", color: "#5a7a9a", fontFamily: "var(--mono)",
+            textAlign: "center", padding: "1rem",
+          }}>
+            <div>
+              <div style={{ fontSize: "0.85rem", marginBottom: 6 }}>(sem edges causais ainda)</div>
+              <div style={{ fontSize: "0.7rem", color: "#3a5a7a" }}>
+                memory_writer e conflict_detector criam edges automaticamente conforme rodam
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <ForceGraph2D
+            graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
+            width={size.w}
+            height={size.h}
+            backgroundColor="rgba(2,6,23,0)"
+            nodeRelSize={5}
+            linkColor={(l) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
+            linkWidth={(l) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
+            linkDirectionalArrowLength={6}
+            linkDirectionalArrowRelPos={1}
+            linkDirectionalArrowColor={(l) => RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}
+            linkDirectionalParticles={(l) => ((l as GraphLink).relation === "contradicts" ? 3 : 0)}
+            linkDirectionalParticleSpeed={0.008}
+            linkDirectionalParticleColor={() => "#f87171"}
+            linkDirectionalParticleWidth={2}
+            linkLineDash={(l) => {
+              const rel = (l as GraphLink).relation;
+              return rel === "contradicts" ? [4, 4] : [6, 5];
+            }}
+            nodeCanvasObjectMode={() => "replace"}
+            nodeCanvasObject={(node, ctx, globalScale) => drawNode(node as GraphNode, ctx, globalScale)}
+            onNodeClick={(node) => setSelected(node as CausalNode)}
+            cooldownTicks={120}
+            d3VelocityDecay={0.32}
+            d3AlphaDecay={0.025}
+          />
+        )}
+      </div>
 
-      {/* Canvas G6 */}
-      <div ref={containerRef} style={{ flex: 1, minHeight: 480, position: "relative" }} />
-
-      {/* Sidebar */}
       {selected && (
         <NodeSidebar
           node={selected}
