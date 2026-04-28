@@ -25,7 +25,7 @@ from app.db.session import get_db
 from app.db.models import (
     SessionContext, DevSignal, MCPConnection, SSHIdentity, ChatMessage,
     LocalDev, Notification,
-    Memory, Event, CausalEdge, AgentRun,
+    Memory, Event, CausalEdge, AgentRun, AgentSubscription,
 )
 from app.services import event_bus as _event_bus
 
@@ -2002,6 +2002,83 @@ async def run_agent(agent_name: str, payload: dict | None = None, db: AsyncSessi
         "output": run.output,
         "error_message": run.error_message,
         "cost_estimate": run.cost_estimate,
+    }
+
+
+@router.post("/agent_subscriptions")
+async def criar_agent_subscription(
+    agent_name: str,
+    projeto: str,
+    config: dict | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Habilita um agente em um projeto. Idempotente — re-enable se já existir disabled."""
+    existing = await db.execute(
+        select(AgentSubscription).where(
+            AgentSubscription.agent_name == agent_name,
+            AgentSubscription.projeto == projeto,
+        )
+    )
+    sub = existing.scalar_one_or_none()
+    if sub:
+        sub.enabled = True
+        if config is not None:
+            sub.config = config
+        await db.commit()
+        return _subscription_to_dict(sub)
+    sub = AgentSubscription(agent_name=agent_name, projeto=projeto, enabled=True, config=config or {})
+    db.add(sub)
+    await db.commit()
+    return _subscription_to_dict(sub)
+
+
+@router.get("/agent_subscriptions")
+async def listar_agent_subscriptions(
+    agent_name: str | None = None,
+    projeto: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista subscriptions com filtros opcionais."""
+    q = select(AgentSubscription)
+    if agent_name:
+        q = q.where(AgentSubscription.agent_name == agent_name)
+    if projeto:
+        q = q.where(AgentSubscription.projeto == projeto)
+    q = q.order_by(AgentSubscription.agent_name, AgentSubscription.projeto)
+    result = await db.execute(q)
+    return [_subscription_to_dict(s) for s in result.scalars().all()]
+
+
+@router.delete("/agent_subscriptions")
+async def remover_agent_subscription(
+    agent_name: str,
+    projeto: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Desabilita (soft) — agente para de rodar nesse projeto."""
+    result = await db.execute(
+        select(AgentSubscription).where(
+            AgentSubscription.agent_name == agent_name,
+            AgentSubscription.projeto == projeto,
+        )
+    )
+    sub = result.scalar_one_or_none()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription não encontrada")
+    sub.enabled = False
+    await db.commit()
+    return {"status": "disabled", "id": str(sub.id)}
+
+
+def _subscription_to_dict(s: AgentSubscription) -> dict:
+    return {
+        "id": str(s.id),
+        "agent_name": s.agent_name,
+        "projeto": s.projeto,
+        "enabled": s.enabled,
+        "config": s.config or {},
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
 
 

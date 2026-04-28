@@ -31,7 +31,7 @@ from sqlalchemy import select, or_
 
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
-from app.db.models import Memory, CausalEdge, DevSignal
+from app.db.models import Memory, CausalEdge, DevSignal, AgentSubscription
 
 
 # Threshold mínimo de relevância (overlap de tokens diff↔candidato) para chamar Opus.
@@ -69,6 +69,23 @@ class ConflictDetector(AgentBase):
         payload = ev.get("payload", {}) or {}
         projeto = ev.get("projeto") or ""
         actor = ev.get("actor") or "unknown"
+
+        # Subscription gate: só roda em projetos onde admin habilitou explicitamente.
+        # Bypass via input.skip_subscription (testes/replay).
+        skip_sub = (input or {}).get("skip_subscription") or payload.get("skip_subscription")
+        if not skip_sub and projeto:
+            sub_q = await db.execute(
+                select(AgentSubscription).where(
+                    AgentSubscription.agent_name == self.NAME,
+                    AgentSubscription.projeto == projeto,
+                    AgentSubscription.enabled == True,  # noqa: E712
+                )
+            )
+            if not sub_q.scalar_one_or_none():
+                return AgentResult(status="done", output={
+                    "skipped": True,
+                    "reason": f"projeto '{projeto}' sem subscription para conflict_detector",
+                })
 
         # Override de modelo via input (para benchmark sonnet vs opus)
         override_model = (input or {}).get("model_override") or payload.get("model_override")

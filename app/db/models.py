@@ -295,6 +295,29 @@ class CausalEdge(Base):
     )
 
 
+class AgentSubscription(Base):
+    """Whitelist por (agente, projeto). Sem row = agente NÃO dispara naquele projeto.
+
+    Protege quota de modelo: agentes Opus/Sonnet só rodam em projetos onde
+    o admin opt-in explicitamente. Ex: brain commita 50x/hora — sem subscription,
+    conflict_detector ignora; SBH/fluxionai com subscription, processa normal.
+    """
+    __tablename__ = "agent_subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    projeto: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("agent_name", "projeto", name="uq_agent_project"),
+        Index("ix_agent_subscriptions_agent", "agent_name"),
+    )
+
+
 class AgentRun(Base):
     """Log de execução de agentes (sonnet/opus workers)."""
     __tablename__ = "agent_runs"
