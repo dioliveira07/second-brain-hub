@@ -1435,8 +1435,15 @@ try:
     _s = _j.loads(_sp.read_text(encoding="utf-8")) if _sp.exists() else {{}}
 except Exception:
     _s = {{}}
-_hb_cmd = str(HOOKS / "prompt_mcp_heartbeat.py")
+# forward slashes — bash do Git Bash come backslashes em paths Windows
+_hb_cmd = (HOOKS / "prompt_mcp_heartbeat.py").as_posix()
 _ups = _s.setdefault("hooks", {{}}).setdefault("UserPromptSubmit", [])
+# remove entrada antiga com backslashes se existir (cleanup de bootstrap anterior)
+for _e in _ups:
+    _e["hooks"] = [_h for _h in _e.get("hooks", [])
+                   if "prompt_mcp_heartbeat.py" not in _h.get("command", "")
+                   or _h.get("command", "") == _hb_cmd]
+_ups[:] = [_e for _e in _ups if _e.get("hooks")]
 _already = any(h.get("command", "") == _hb_cmd for e in _ups for h in e.get("hooks", []))
 if not _already:
     _ups.append({{"hooks": [{{"type": "command", "command": _hb_cmd}}]}})
