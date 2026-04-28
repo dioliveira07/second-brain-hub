@@ -14,7 +14,7 @@ import secrets
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query
 from pydantic import BaseModel
 from sqlalchemy import select, delete, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1500,6 +1500,57 @@ async def get_hook_file(filename: str):
         }
     except Exception:
         raise HTTPException(status_code=404, detail=f"{filename} não disponível")
+
+
+@router.get("/skills/sync")
+async def skills_sync(since: str = Query("", description="Commit atual do cliente — retorna up_to_date=true se nada mudou")):
+    """Atualiza o clone local do repo skills e retorna arquivos alterados como JSON.
+    Mantém o GitHub token centralizado no hub — clientes usam apenas X-Hub-Key."""
+    import subprocess, hashlib
+    from pathlib import Path as _Path
+
+    skills_dir = _Path(os.getenv("REPOS_DIR", "/data/repos")) / "dioliveira07_skills"
+    if not skills_dir.exists():
+        raise HTTPException(status_code=404, detail="Skills repo não encontrado no hub")
+
+    # git pull no clone local (token já está na remote URL do clone)
+    subprocess.run(
+        ["git", "-C", str(skills_dir), "pull", "--rebase", "-q"],
+        capture_output=True, timeout=30,
+    )
+
+    # commit atual
+    r = subprocess.run(["git", "-C", str(skills_dir), "rev-parse", "HEAD"],
+                       capture_output=True, text=True)
+    commit = r.stdout.strip()
+
+    if since and since == commit:
+        return {"up_to_date": True, "commit": commit}
+
+    # coleta arquivos texto (exclui binários, __pycache__, .git)
+    allowed_ext = {".md", ".py", ".sh", ".ps1", ".json", ".yaml", ".yml", ".txt", ".html"}
+    files: dict[str, str] = {}
+    for f in skills_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        parts = f.parts
+        if any(p in (".git", "__pycache__") for p in parts):
+            continue
+        if f.suffix not in allowed_ext:
+            continue
+        if f.stat().st_size > 512_000:  # pula arquivos > 512KB
+            continue
+        try:
+            files[str(f.relative_to(skills_dir))] = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    return {
+        "up_to_date": False,
+        "commit": commit,
+        "file_count": len(files),
+        "files": files,
+    }
 
 
 @router.get("/security/audit-log")
