@@ -1,5 +1,4 @@
 import asyncio
-import ipaddress
 import logging
 import secrets
 from fastapi import FastAPI, Request
@@ -23,21 +22,8 @@ _audit_log: deque = deque(maxlen=500)
 _hub_started_at: str = datetime.now(timezone.utc).isoformat()
 _auth_success: dict = {}  # ip → último timestamp de sucesso (dedup 5min)
 
-_INTERNAL_NETWORKS = [
-    ipaddress.ip_network("172.16.0.0/12"),   # Docker bridge
-    ipaddress.ip_network("10.0.0.0/8"),       # Docker custom networks
-    ipaddress.ip_network("127.0.0.0/8"),      # loopback
-]
-
 _AUTH_SKIP_PREFIXES = ("/health", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks/", "/api/cerebro/bootstrap")
 
-
-def _is_internal(ip: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in _INTERNAL_NETWORKS)
-    except ValueError:
-        return False
 
 
 async def cleanup_sessions():

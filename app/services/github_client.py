@@ -90,18 +90,6 @@ async def get_pr_details(full_name: str, pr_number: int, token: str) -> dict:
         }
 
 
-async def get_pr_files(full_name: str, pr_number: int, token: str) -> list[str]:
-    """Return list of filenames changed in the PR."""
-    import httpx
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"https://api.github.com/repos/{full_name}/pulls/{pr_number}/files",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-            params={"per_page": 100},
-        )
-        if resp.status_code != 200:
-            return []
-        return [f["filename"] for f in resp.json()]
 
 
 def verify_webhook_signature(payload_bytes: bytes, signature_header: str, secret: str) -> bool:

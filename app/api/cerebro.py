@@ -791,7 +791,7 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "connected_at": c.connected_at.isoformat(),
             "last_seen_at": c.last_seen_at.isoformat(),
             "minutos_atras": int((agora - c.last_seen_at).total_seconds() / 60),
-            "ativo": (agora - c.last_seen_at).total_seconds() < 28800,  # 8h
+            "ativo": (agora - c.last_seen_at).total_seconds() < 2700,  # 45min
             "skills_updated_at": c.skills_updated_at.isoformat() if c.skills_updated_at else None,
             "skills_pending": c.pending_skills_update,
             "real_ip": c.real_ip,
@@ -1173,11 +1173,6 @@ class LocalDevCreate(BaseModel):
     isolated: bool = False
     github_link: str | None = None
 
-
-class SBHBindPayload(BaseModel):
-    sbh_token: str
-    dev: str
-    dev_token: str  # token do LocalDev para validar identidade
 
 
 @router.post("/devs/register", dependencies=[Depends(require_admin)])
