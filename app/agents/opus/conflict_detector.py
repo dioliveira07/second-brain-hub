@@ -56,9 +56,10 @@ ESCALATE_HIGH = 0.7
 @register
 class ConflictDetector(AgentBase):
     NAME = "conflict_detector"
-    MODEL = "sonnet"  # default barato — escala pra opus em zona cinza
+    MODEL = "opus"  # default Opus em conta Max — 100% acurácia estável.
+    # Sonnet ainda disponível via input.model_override="sonnet" para casos onde
+    # a janela Max está saturada (ex: bursts de commits durante deploy).
     # Só commit_realizado (pontos de decisão real, não edits intermediários WIP).
-    # Arquivo_editado seria 10x o volume com sinal mais ruidoso.
     SUBSCRIBES = (
         "signal.commit_realizado",
     )
