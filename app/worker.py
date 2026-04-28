@@ -1,7 +1,20 @@
 from celery import Celery
 from celery.schedules import crontab
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.db.session import engine, async_session
+
+
+def _fresh_session_factory():
+    """Engine novo por task — evita 'Event loop is closed' em Celery prefork.
+
+    asyncpg bind connections ao event loop. Celery cria loop novo por task,
+    então não dá pra reusar engine de módulo. NullPool não cacheia conexão.
+    """
+    fresh_engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    factory = async_sessionmaker(fresh_engine, class_=AsyncSession, expire_on_commit=False)
+    return fresh_engine, factory
 
 celery_app = Celery(
     "second_brain_hub",
@@ -23,6 +36,14 @@ celery_app.conf.update(
         "refresh-permissions-hourly": {
             "task": "app.worker.refresh_all_permissions",
             "schedule": crontab(minute=0),
+        },
+        "dispatch-events-every-30s": {
+            "task": "app.worker.dispatch_events",
+            "schedule": 30.0,  # segundos
+        },
+        "decay-memories-daily-3am": {
+            "task": "app.worker.decay_memories",
+            "schedule": crontab(hour=3, minute=0),
         },
     },
 )
@@ -152,3 +173,119 @@ def index_repo_task(github_full_name: str, changed_files: list | None = None):
         return result
 
     return asyncio.run(run())
+
+
+# ── Foundation v2: agent dispatch + decay ───────────────────────────────────
+
+@celery_app.task(name="app.worker.dispatch_events")
+def dispatch_events():
+    """Polla events não-processados e dispatcha para agentes inscritos.
+
+    Estado de "última posição" é mantido por agente em Redis
+    (chave agent:<name>:last_event_ts). Roda a cada 30s.
+    """
+    import asyncio
+    return asyncio.run(_dispatch_events_async())
+
+
+async def _dispatch_events_async():
+    from sqlalchemy import select
+    from datetime import datetime, timezone, timedelta
+    from app.db.models import Event
+    from app.agents import registry
+    from app.agents.base import execute_agent
+    from app.services import event_bus
+
+    registry.ensure_loaded()
+    redis = await event_bus._get_redis()
+    if not redis:
+        return {"error": "redis indisponivel"}
+
+    fresh_engine, fresh_factory = _fresh_session_factory()
+    dispatched = 0
+    errors = 0
+
+    try:
+        async with fresh_factory() as db:
+            since = datetime.now(timezone.utc) - timedelta(hours=2)
+            result = await db.execute(
+                select(Event).where(Event.ts >= since).order_by(Event.ts.asc())
+            )
+            events = result.scalars().all()
+
+        for ev in events:
+            agent_classes = registry.agents_for_event(ev.type)
+            if not agent_classes:
+                continue
+
+            for cls in agent_classes:
+                state_key = f"agent:{cls.NAME}:last_event_ts"
+                last_ts_str = await redis.get(state_key)
+                last_ts = None
+                if last_ts_str:
+                    try:
+                        last_ts = datetime.fromisoformat(last_ts_str)
+                    except Exception:
+                        last_ts = None
+
+                if last_ts and ev.ts <= last_ts:
+                    continue
+
+                try:
+                    async with fresh_factory() as db2:
+                        agent = cls()
+                        event_dict = {
+                            "id": str(ev.id),
+                            "type": ev.type,
+                            "actor": ev.actor,
+                            "projeto": ev.projeto,
+                            "payload": ev.payload or {},
+                            "source_table": ev.source_table,
+                            "source_id": str(ev.source_id) if ev.source_id else None,
+                            "ts": ev.ts.isoformat(),
+                        }
+                        await execute_agent(
+                            agent, db2,
+                            trigger_type="event",
+                            trigger_ref=str(ev.id),
+                            event=event_dict,
+                        )
+                    dispatched += 1
+                except Exception:
+                    errors += 1
+
+                await redis.set(state_key, ev.ts.isoformat())
+    finally:
+        await fresh_engine.dispose()
+        # fecha redis para evitar warnings
+        try:
+            await event_bus.close()
+        except Exception:
+            pass
+
+    return {"dispatched": dispatched, "errors": errors, "events_scanned": len(events)}
+
+
+@celery_app.task(name="app.worker.decay_memories")
+def decay_memories():
+    """Roda decay_worker uma vez por dia."""
+    import asyncio
+    return asyncio.run(_decay_memories_async())
+
+
+async def _decay_memories_async():
+    from app.agents import registry
+    from app.agents.base import execute_agent
+
+    registry.ensure_loaded()
+    agent = registry.get_agent("decay_worker")
+    if not agent:
+        return {"error": "decay_worker não registrado"}
+
+    fresh_engine, fresh_factory = _fresh_session_factory()
+    try:
+        async with fresh_factory() as db:
+            run = await execute_agent(agent, db, trigger_type="cron")
+            return {"agent_run_id": str(run.id), "status": run.status, "output": run.output}
+    finally:
+        await fresh_engine.dispose()

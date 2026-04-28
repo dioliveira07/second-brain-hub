@@ -1945,6 +1945,74 @@ def _event_to_dict(e: Event) -> dict:
     }
 
 
+# ── Agentes ─────────────────────────────────────────────────────────────────
+
+@router.get("/agents")
+async def listar_agents():
+    """Lista agentes registrados com metadata (model, subscribes, cron)."""
+    from app.agents import registry
+    registry.ensure_loaded()
+    return registry.list_agents()
+
+
+@router.post("/agents/{agent_name}/run")
+async def run_agent(agent_name: str, payload: dict | None = None, db: AsyncSession = Depends(get_db)):
+    """Trigger manual de um agente. payload vai como `input` do run."""
+    from app.agents import registry
+    from app.agents.base import execute_agent
+    registry.ensure_loaded()
+
+    agent = registry.get_agent(agent_name)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agente '{agent_name}' não registrado")
+
+    run = await execute_agent(agent, db, trigger_type="manual", input=payload or {})
+    return {
+        "id": str(run.id),
+        "agent_name": run.agent_name,
+        "status": run.status,
+        "duration_ms": run.duration_ms,
+        "output": run.output,
+        "error_message": run.error_message,
+        "cost_estimate": run.cost_estimate,
+    }
+
+
+@router.get("/agent_runs")
+async def listar_agent_runs(
+    agent_name: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista execuções de agentes."""
+    q = select(AgentRun)
+    if agent_name:
+        q = q.where(AgentRun.agent_name == agent_name)
+    if status:
+        q = q.where(AgentRun.status == status)
+    q = q.order_by(AgentRun.started_at.desc()).limit(min(limit, 200))
+    result = await db.execute(q)
+    return [
+        {
+            "id": str(r.id),
+            "agent_name": r.agent_name,
+            "model": r.model,
+            "trigger_type": r.trigger_type,
+            "trigger_ref": r.trigger_ref,
+            "status": r.status,
+            "error_message": r.error_message,
+            "duration_ms": r.duration_ms,
+            "cost_estimate": r.cost_estimate,
+            "input": r.input or {},
+            "output": r.output or {},
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+        }
+        for r in result.scalars().all()
+    ]
+
+
 def _edge_to_dict(c: CausalEdge) -> dict:
     return {
         "id": str(c.id),
