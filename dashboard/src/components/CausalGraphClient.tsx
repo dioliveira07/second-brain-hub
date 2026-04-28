@@ -598,10 +598,9 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       background: "rgba(2,6,23,0.6)", display: "flex", flexDirection: "column",
       minHeight: 520,
     }}>
-      {/* Stats overlay (top-left, como /graph) */}
+      {/* Stats overlay — só relações (cores dos nodes já comunicam tipos) */}
       <div style={{
-        position: "absolute", top: 12, left: 12, zIndex: 5,
-        display: "flex", flexDirection: "column", gap: 8, maxWidth: 360,
+        position: "absolute", top: 12, left: 12, zIndex: 5, maxWidth: 360,
       }}>
         <div style={{
           padding: "0.6rem 0.85rem",
@@ -614,34 +613,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
             marginBottom: 4, letterSpacing: "0.08em",
           }}>
-            TIPOS · {data.totals.nodes} nodes
-          </div>
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {Object.entries(typeStats).sort((a, b) => b[1] - a[1]).map(([t, c]) => (
-              <span key={t} style={{
-                padding: "1px 6px", borderRadius: 3, fontSize: "0.62rem",
-                fontFamily: "var(--mono)",
-                background: `${NODE_COLOR[t] || "#06b6d4"}22`,
-                color: NODE_COLOR[t] || "#06b6d4",
-              }}>
-                {t} {c}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div style={{
-          padding: "0.6rem 0.85rem",
-          background: "rgba(2,8,18,0.85)",
-          backdropFilter: "blur(12px)",
-          borderRadius: 6,
-          border: "1px solid rgba(6,182,212,0.18)",
-        }}>
-          <div style={{
-            fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
-            marginBottom: 4, letterSpacing: "0.08em",
-          }}>
-            RELAÇÕES · {data.totals.edges} edges
+            {data.totals.nodes} NODES · {data.totals.edges} EDGES
           </div>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {Object.entries(relationStats).sort((a, b) => b[1] - a[1]).map(([r, c]) => (
