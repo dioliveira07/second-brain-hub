@@ -1401,7 +1401,12 @@ for fname, dest, required in _files:
             (SKILLS_HOOKS / fname).write_text(content, encoding='utf-8')
         except Exception:
             pass
-    print(f"OK  {{fname}} -> {{dest}}")
+    _ver = ""
+    if fname == "prompt_mcp_heartbeat.py":
+        import re as _re
+        _m = _re.search(r"""HB_VERSION\s*=\s*["']([^"']+)["']""", content)
+        _ver = f"  (HB {{_m.group(1)}})" if _m else ""
+    print(f"OK  {{fname}} -> {{dest}}{{_ver}}")
 
 # 4. Criar .noupdate — protege hooks críticos contra self-update do ~/skills/
 _noupdate = HOOKS / ".noupdate"
