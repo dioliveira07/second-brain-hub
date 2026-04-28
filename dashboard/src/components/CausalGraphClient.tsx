@@ -609,36 +609,8 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     ctx.textBaseline = "middle";
     ctx.fillText(icon, x, y);
 
-    // Label compacta — só visível em zoom 1.5+ pra não poluir
-    if (globalScale > 1.4) {
-      const maxLen = 22;
-      const label = node.label.length > maxLen ? node.label.slice(0, maxLen) + "…" : node.label;
-      const fontSize = 7;  // pequena
-      ctx.font = `${fontSize}px 'Fira Code', monospace`;
-      const textWidth = ctx.measureText(label).width;
-      const padX = 4;
-      const padY = 2;
-      const labelY = y + r + 7;
-
-      // Fundo escuro arredondado
-      ctx.fillStyle = "rgba(2,6,23,0.88)";
-      ctx.beginPath();
-      const rx = x - textWidth / 2 - padX;
-      const ry = labelY - fontSize / 2 - padY;
-      const rw = textWidth + padX * 2;
-      const rh = fontSize + padY * 2;
-      const radius = 2.5;
-      ctx.moveTo(rx + radius, ry);
-      ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, radius);
-      ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, radius);
-      ctx.arcTo(rx, ry + rh, rx, ry, radius);
-      ctx.arcTo(rx, ry, rx + rw, ry, radius);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = color;
-      ctx.fillText(label, x, labelY);
-    }
+    // Label removido — info detalhada vem na sidebar ao clicar.
+    // Sem label evita confusão visual em grafo denso (1k+ nodes).
   }, [selected]);
 
   return (
@@ -647,9 +619,10 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       background: "rgba(2,6,23,0.6)", display: "flex", flexDirection: "column",
       minHeight: 520,
     }}>
-      {/* Stats overlay — só relações (cores dos nodes já comunicam tipos) */}
+      {/* Stats overlay */}
       <div style={{
-        position: "absolute", top: 12, left: 12, zIndex: 5, maxWidth: 360,
+        position: "absolute", top: 12, left: 12, zIndex: 5,
+        display: "flex", flexDirection: "column", gap: 8, maxWidth: 360,
       }}>
         <div style={{
           padding: "0.6rem 0.85rem",
@@ -662,7 +635,34 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
             marginBottom: 4, letterSpacing: "0.08em",
           }}>
-            {data.totals.nodes} NODES · {data.totals.edges} EDGES
+            TIPOS · {data.totals.nodes} nodes
+          </div>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+            {Object.entries(typeStats).sort((a, b) => b[1] - a[1]).map(([t, c]) => (
+              <span key={t} style={{
+                padding: "1px 6px", borderRadius: 3, fontSize: "0.62rem",
+                fontFamily: "var(--mono)",
+                background: `${NODE_COLOR[t] || "#06b6d4"}22`,
+                color: NODE_COLOR[t] || "#06b6d4",
+              }}>
+                {t} {c}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          padding: "0.6rem 0.85rem",
+          background: "rgba(2,8,18,0.85)",
+          backdropFilter: "blur(12px)",
+          borderRadius: 6,
+          border: "1px solid rgba(6,182,212,0.18)",
+        }}>
+          <div style={{
+            fontSize: "0.62rem", color: "#5a7a9a", fontFamily: "var(--mono)",
+            marginBottom: 4, letterSpacing: "0.08em",
+          }}>
+            RELAÇÕES · {data.totals.edges} edges
           </div>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {Object.entries(relationStats).sort((a, b) => b[1] - a[1]).map(([r, c]) => (
