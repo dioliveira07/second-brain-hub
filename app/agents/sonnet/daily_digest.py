@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentBase, AgentResult
 from app.agents.registry import register
-from app.db.models import Memory, DevSignal
+from app.db.models import Memory, DevSignal, CausalEdge
 
 
 MIN_EVENTS_FOR_DIGEST = 5
@@ -103,6 +103,26 @@ class DailyDigest(AgentBase):
                 await asyncio.to_thread(memory_qdrant.index_memory, mem)
             except Exception:
                 pass
+
+            # Edges: signals do dia → memory context
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            import uuid as _uuid
+            for s in evs[:50]:
+                try:
+                    stmt = pg_insert(CausalEdge).values(
+                        id=_uuid.uuid4(),
+                        cause_table="dev_signals",
+                        cause_id=s.id,
+                        effect_table="memories",
+                        effect_id=mem.id,
+                        relation="derived_from",
+                        confidence=0.6,
+                        detected_by="daily_digest",
+                    ).on_conflict_do_nothing(constraint="uq_causal_unique")
+                    await db.execute(stmt)
+                except Exception:
+                    pass
+
             created += 1
 
         await db.commit()

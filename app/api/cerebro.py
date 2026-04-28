@@ -1898,7 +1898,7 @@ async def get_causal_graph(
     q = select(CausalEdge)
     if relation:
         q = q.where(CausalEdge.relation == relation)
-    q = q.order_by(CausalEdge.created_at.desc()).limit(min(limit, 500))
+    q = q.order_by(CausalEdge.created_at.desc()).limit(min(limit, 3000))
     result = await db.execute(q)
     edges_raw = result.scalars().all()
 
