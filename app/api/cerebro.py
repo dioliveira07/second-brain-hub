@@ -1450,6 +1450,39 @@ if not _already:
 else:
     print("OK  heartbeat ja registrado em settings.json")
 
+# 6. Instalar cron/Task Scheduler — heartbeat a cada 5min independente do Claude
+import sys as _sys, subprocess as _sp2
+_hb_py = str(HOOKS / "prompt_mcp_heartbeat.py")
+
+if _sys.platform == "win32":
+    # Windows — Task Scheduler via schtasks
+    try:
+        _task = "ClaudeHubHeartbeat"
+        _tr = "python3 " + chr(34) + _hb_py + chr(34)
+        _sp2.run(["schtasks", "/delete", "/tn", _task, "/f"], capture_output=True)
+        _sp2.run([
+            "schtasks", "/create", "/tn", _task,
+            "/tr", _tr,
+            "/sc", "minute", "/mo", "5",
+            "/rl", "highest", "/f",
+        ], check=True, capture_output=True)
+        print("OK  Task Scheduler configurado (a cada 5min)")
+    except Exception as _e:
+        print("WARN Task Scheduler nao configurado: " + str(_e))
+else:
+    # Linux / macOS — crontab
+    try:
+        _entry = "*/5 * * * * python3 " + _hb_py + " >> /tmp/hb_cron.log 2>&1"
+        _existing = _sp2.run(["crontab", "-l"], capture_output=True, text=True).stdout
+        if _hb_py not in _existing:
+            _new = (_existing.rstrip("\\n") + "\\n" + _entry + "\\n").lstrip("\\n")
+            _sp2.run(["crontab", "-"], input=_new, text=True, check=True)
+            print("OK  cron instalado (a cada 5min)")
+        else:
+            print("OK  cron ja instalado")
+    except Exception as _e:
+        print("WARN cron nao instalado: " + str(_e))
+
 print("\\nBOOTSTRAP CONCLUIDO — proximo prompt ja sera autenticado\\n")
 '''
     return script
