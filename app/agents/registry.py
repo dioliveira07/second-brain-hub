@@ -67,7 +67,8 @@ def _autoload():
     # Sonnet workers
     from app.agents.sonnet import memory_writer  # noqa: F401
     from app.agents.sonnet import decay_worker   # noqa: F401
-    # Opus workers (a serem adicionados nas próximas fases)
+    # Opus workers
+    from app.agents.opus import conflict_detector  # noqa: F401
 
 
 _autoloaded = False

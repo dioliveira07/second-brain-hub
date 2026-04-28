@@ -783,12 +783,39 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
         for n in notif_result.scalars().all()
     ]
 
+    # Memórias proativas: scope=session, scope_ref=machine, ainda não expiradas.
+    # Geradas por agentes (conflict_detector, etc) — injetadas no contexto do prompt.
+    machine_name = payload.machine or payload.client_name or ""
+    pending_memories = []
+    if machine_name:
+        now_utc = datetime.now(timezone.utc)
+        mem_result = await db.execute(
+            select(Memory).where(
+                Memory.scope == "session",
+                Memory.scope_ref == machine_name,
+                Memory.archived == False,  # noqa: E712
+                or_(Memory.expires_at == None, Memory.expires_at > now_utc),  # noqa: E711
+            ).order_by(Memory.created_at.desc()).limit(3)
+        )
+        pending_memories = [
+            {
+                "id": str(m.id),
+                "type": m.type,
+                "title": m.title,
+                "content": m.content,
+                "tags": m.tags or [],
+                "confidence": m.confidence,
+            }
+            for m in mem_result.scalars().all()
+        ]
+
     # Distribuir chave para máquinas já registradas (bootstrap seguro)
     # Só retorna para máquinas conhecidas (existing); novas precisam de onboarding manual
     hub_key = settings.hub_api_key if (existing and settings.hub_api_key) else None
 
     return {"status": "ok", "update_skills": update_skills,
             "task_notifications": task_notifications,
+            "pending_memories": pending_memories,
             **({"hub_api_key": hub_key} if hub_key else {})}
 
 
