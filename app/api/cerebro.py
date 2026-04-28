@@ -721,10 +721,11 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
         if payload.hb_version:
             existing.hb_version = payload.hb_version
         # Versão desatualizada → update_skills automático
+        _cur = _current_hb_version()
         version_outdated = bool(
             payload.hb_version
-            and settings.current_hb_version
-            and payload.hb_version != settings.current_hb_version
+            and _cur
+            and payload.hb_version < _cur
         )
         was_pending = bool(existing.pending_skills_update)
         update_skills = was_pending or version_outdated
@@ -795,7 +796,7 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "skills_pending": c.pending_skills_update,
             "real_ip": c.real_ip,
             "hb_version": c.hb_version,
-            "hb_outdated": bool(c.hb_version and settings.current_hb_version and c.hb_version != settings.current_hb_version),
+            "hb_outdated": bool(c.hb_version and _current_hb_version() and c.hb_version < _current_hb_version()),
         }
         for c in conns
     ]
@@ -1402,6 +1403,23 @@ for fname, dest, required in _files:
             pass
     print(f"OK  {{fname}} -> {{dest}}")
 
+# 4. Registrar heartbeat no settings.json
+_sp = CLAUDE / "settings.json"
+try:
+    import json as _j
+    _s = _j.loads(_sp.read_text(encoding="utf-8")) if _sp.exists() else {{}}
+except Exception:
+    _s = {{}}
+_hb_cmd = str(HOOKS / "prompt_mcp_heartbeat.py")
+_ups = _s.setdefault("hooks", {{}}).setdefault("UserPromptSubmit", [])
+_already = any(h.get("command", "") == _hb_cmd for e in _ups for h in e.get("hooks", []))
+if not _already:
+    _ups.append({{"hooks": [{{"type": "command", "command": _hb_cmd}}]}})
+    _sp.write_text(_j.dumps(_s, indent=2, ensure_ascii=False), encoding="utf-8")
+    print("OK  heartbeat registrado em settings.json")
+else:
+    print("OK  heartbeat ja registrado em settings.json")
+
 print("\\nBOOTSTRAP CONCLUIDO - proximo prompt ja sera autenticado\\n")
 '''
     return script
@@ -1422,6 +1440,17 @@ def _sign_content(content: str) -> str:
         return base64.b64encode(sig).decode()
     except Exception:
         return ""
+
+
+def _current_hb_version() -> str:
+    """Lê HB_VERSION direto do arquivo fonte — nunca desincroniza com o que é servido."""
+    import re
+    try:
+        content = open(os.path.expanduser("~/skills/hooks/prompt_mcp_heartbeat.py"), encoding="utf-8").read()
+        m = re.search(r'^HB_VERSION\s*=\s*["\']([^"\']+)["\']', content, re.M)
+        return m.group(1) if m else ""
+    except Exception:
+        return settings.current_hb_version  # fallback
 
 
 @router.get("/hooks/{filename}")
