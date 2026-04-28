@@ -508,32 +508,42 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     const fg = fgRef.current;
     if (!fg || typeof fg.d3Force !== "function") return;
 
-    // Carrega d3-force runtime pra criar forceCollide
     let cancelled = false;
     (async () => {
-      const d3 = await import("d3-force");
+      // d3-force-3d é o que react-force-graph usa internamente; cair pra d3-force se não tiver
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let d3: any;
+      try {
+        // @ts-expect-error d3-force-3d sem types (sub-dep de react-force-graph)
+        d3 = await import("d3-force-3d");
+      } catch {
+        d3 = await import("d3-force");
+      }
       if (cancelled) return;
 
-      // Collision: raio por tipo (decisão maior, signal menor)
+      // Visual radii: decisão 16, memória 13, signal 9.
+      // Collide deve ser radius_visual + ~12px buffer pra não encostar.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const radiusFn = (node: any): number => {
         const n = node as GraphNode;
-        if (n.table === "architectural_decisions") return 28;
-        if (n.table === "memories") return 24;
-        return 18;
+        if (n.table === "architectural_decisions") return 32;  // 16 + 16
+        if (n.table === "memories") return 26;                  // 13 + 13
+        return 20;                                              // 9 + 11
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fg.d3Force("collide", (d3 as any).forceCollide().radius(radiusFn).strength(0.95).iterations(2));
+      const collide = (d3 as any).forceCollide(radiusFn).strength(1).iterations(4);
+      fg.d3Force("collide", collide);
 
-      // Charge mais forte (repulsão geral)
+      // Charge muito mais forte para 1k+ nodes
       const charge = fg.d3Force("charge");
-      if (charge?.strength) charge.strength(-180);
+      if (charge?.strength) {
+        charge.strength(-400);
+        charge.distanceMax?.(400);  // limita alcance pra performance
+      }
 
-      // Distância das ligações
       const link = fg.d3Force("link");
-      if (link?.distance) link.distance(80);
+      if (link?.distance) link.distance(90);
 
-      // Reaquece a simulação pra aplicar
       try { fg.d3ReheatSimulation?.(); } catch {}
     })();
 
@@ -694,10 +704,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             width={size.w}
             height={size.h}
             backgroundColor="rgba(2,6,23,0)"
-            nodeRelSize={13}
+            nodeRelSize={18}
             nodeVal={(n) => {
+              // val controla collide nativo: radius = nodeRelSize × ∛val
+              // 18 × ∛6 ≈ 33 (decisão), 18 × ∛3 ≈ 26 (memória), 18 × ∛1 = 18 (signal)
               const node = n as GraphNode;
-              return node.table === "architectural_decisions" ? 12 : node.table === "memories" ? 8 : 4;
+              return node.table === "architectural_decisions" ? 6 : node.table === "memories" ? 3 : 1;
             }}
             linkColor={(l) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
             linkWidth={(l) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
