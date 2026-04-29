@@ -430,7 +430,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     const t = setInterval(async () => {
       try {
         const params = new URLSearchParams();
-        params.set("limit", "300");
+        params.set("limit", "1000");
         if (filterRelation) params.set("relation", filterRelation);
         const r = await fetch(`/painel/api/cerebro-proxy?path=/causal/graph?${params.toString()}`);
         if (!r.ok) return;
