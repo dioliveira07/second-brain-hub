@@ -384,26 +384,40 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectedRef  = useRef(selected);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
-  // Resize observer (canvas ocupa todo o container disponível)
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // Lê dimensões reais após o browser aplicar CSS (rAF), só então monta o grafo
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      if (width > 0) setSize({ w: width, h: Math.max(420, height) });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // ResizeObserver com debounce para redimensionamentos posteriores
   useEffect(() => {
     if (!containerRef.current) return;
+    let timer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(entries => {
-      for (const e of entries) {
-        const sidebarOpen = !!selected;
-        setSize({
-          w: e.contentRect.width - (sidebarOpen ? 320 : 0),
-          h: Math.max(420, e.contentRect.height),
-        });
-      }
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        for (const e of entries) {
+          const sidebarW = selectedRef.current ? 320 : 0;
+          setSize({ w: e.contentRect.width - sidebarW, h: Math.max(420, e.contentRect.height) });
+        }
+      }, 60);
     });
     ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [selected]);
+    return () => { ro.disconnect(); clearTimeout(timer); };
+  }, []);
 
   // Polling 60s — só atualiza state se IDs realmente mudaram (evita reset da física)
   useEffect(() => {
@@ -697,7 +711,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               </div>
             </div>
           </div>
-        ) : (
+        ) : size.w > 0 ? (
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
@@ -741,7 +755,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
-        )}
+        ) : null}
       </div>
 
       {selected && (
