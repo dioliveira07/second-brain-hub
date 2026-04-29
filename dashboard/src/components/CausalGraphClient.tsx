@@ -715,12 +715,13 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               </div>
             </div>
           </div>
-        ) : (
+        ) : size.w > 0 ? (
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
             width={size.w}
             height={size.h}
+            onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
             backgroundColor="rgba(2,6,23,0)"
             nodeRelSize={18}
             nodeVal={(n) => {
@@ -759,7 +760,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
-        )}
+        ) : null}
       </div>
 
       {selected && (
