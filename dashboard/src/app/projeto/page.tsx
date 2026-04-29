@@ -125,10 +125,27 @@ function ProjetoTimelineContent() {
 
   const nome = slug.split("/").pop() ?? slug;
 
+  const [repos, setRepos] = useState<{owner: string; name: string; full_name: string}[]>([]);
+  useEffect(() => {
+    if (slug) return;
+    fetch("/painel/api/cerebro-proxy?path=/../../v1/repos").then(r => r.json()).then(d => {
+      if (Array.isArray(d)) setRepos(d.map((r: {owner?: string; name?: string; full_name?: string}) => ({ owner: r.owner ?? "", name: r.name ?? "", full_name: r.full_name ?? "" })));
+    }).catch(() => {});
+  }, [slug]);
+
   if (!slug) {
     return (
-      <div style={{ textAlign: "center", padding: "4rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.85rem" }}>
-        Nenhum projeto selecionado. Use <code>?slug=owner/repo</code>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: 600 }}>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.dim, letterSpacing: "0.08em" }}>Selecione um projeto</div>
+        {repos.length === 0 && <div style={{ color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>Carregando repos...</div>}
+        {repos.map(r => (
+          <Link key={r.full_name} href={`/projeto?slug=${encodeURIComponent(r.full_name)}`}
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0.85rem 1.1rem", textDecoration: "none", color: C.text, fontFamily: "var(--mono)", fontSize: "0.82rem" }}>
+            <FileCode size={14} color={C.cyan} />
+            <span style={{ flex: 1 }}>{r.full_name}</span>
+            <ArrowLeft size={12} color={C.dim} style={{ transform: "rotate(180deg)" }} />
+          </Link>
+        ))}
       </div>
     );
   }
