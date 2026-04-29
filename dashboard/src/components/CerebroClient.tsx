@@ -1314,31 +1314,33 @@ export function CerebroClient({
         {/* MCP */}
         {tab === "mcp" && (
           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", flexShrink: 0, gap: "0.5rem" }}>
-              <button
-                onClick={broadcastBootstrap}
-                disabled={bootstrapBroadcasting}
-                style={{ background: bootstrapBroadcasting ? `${C.dim}22` : `${C.purple}18`, border: `1px solid ${bootstrapBroadcasting ? C.dim : C.purple}55`, color: bootstrapBroadcasting ? C.dim : C.purple, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: bootstrapBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
-              >
-                <Zap size={12} />
-                {bootstrapBroadcasting ? "enviando..." : "re-bootstrap"}
-              </button>
-              <button
-                onClick={broadcastSkills}
-                disabled={skillsBroadcasting}
-                style={{ background: skillsBroadcasting ? `${C.dim}22` : `${C.cyan}18`, border: `1px solid ${skillsBroadcasting ? C.dim : C.cyan}55`, color: skillsBroadcasting ? C.dim : C.cyan, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: skillsBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
-              >
-                <Cpu size={12} />
-                {skillsBroadcasting ? "enviando..." : "atualizar skills"}
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "0.5rem" }}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, lineHeight: 1.6 }}>
+                <span style={{ color: C.muted }}>bootstrap:</span> <code style={{ color: C.dim }}>python3 -c &quot;import urllib.request; exec(urllib.request.urlopen(&apos;http://hub.fluxiom.com.br/api/cerebro/bootstrap&apos;).read().decode())&quot;</code><br />
+                <span style={{ color: C.muted }}>mcp:</span> <code style={{ color: C.dim }}>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse</code>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+                <button
+                  onClick={broadcastBootstrap}
+                  disabled={bootstrapBroadcasting}
+                  style={{ background: bootstrapBroadcasting ? `${C.dim}22` : `${C.purple}18`, border: `1px solid ${bootstrapBroadcasting ? C.dim : C.purple}55`, color: bootstrapBroadcasting ? C.dim : C.purple, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: bootstrapBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+                >
+                  <Zap size={12} />
+                  {bootstrapBroadcasting ? "enviando..." : "re-bootstrap"}
+                </button>
+                <button
+                  onClick={broadcastSkills}
+                  disabled={skillsBroadcasting}
+                  style={{ background: skillsBroadcasting ? `${C.dim}22` : `${C.cyan}18`, border: `1px solid ${skillsBroadcasting ? C.dim : C.cyan}55`, color: skillsBroadcasting ? C.dim : C.cyan, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: skillsBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+                >
+                  <Cpu size={12} />
+                  {skillsBroadcasting ? "enviando..." : "atualizar skills"}
+                </button>
+              </div>
             </div>
             {localMcpConns.length === 0 ? (
               <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-                Nenhum cliente MCP conectado nas últimas 24h.<br />
-                <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
-                  Bootstrap: <code>python3 -c &quot;import urllib.request; exec(urllib.request.urlopen(&apos;http://hub.fluxiom.com.br/api/cerebro/bootstrap&apos;).read().decode())&quot;</code><br />
-                  MCP: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse</code>
-                </span>
+                Nenhum cliente MCP conectado nas últimas 24h.
               </div>
             ) : (
               <Virtuoso
