@@ -14,10 +14,12 @@ export async function GET(req: NextRequest) {
 }
 
 // PATCH /api/notif-proxy?id=<uuid>&action=read
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function PATCH(req: NextRequest) {
   const id     = req.nextUrl.searchParams.get("id") ?? "";
   const action = req.nextUrl.searchParams.get("action") ?? "read";
-  if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
+  if (!id || !UUID_RE.test(id)) return NextResponse.json({ error: "invalid id" }, { status: 400 });
   const res = await fetch(`${HUB_URL}/api/v1/notifications/${id}/${action}`, { method: "PATCH", headers: HDRS });
   const data = await res.json();
   return NextResponse.json(data);

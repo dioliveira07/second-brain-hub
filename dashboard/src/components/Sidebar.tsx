@@ -109,7 +109,7 @@ export function Sidebar() {
         }}
       >
         {NAV.map(({ href, label, Icon }, i) => {
-          const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+          const active = pathname === href || (href.length > 1 && pathname.startsWith(href + "/")) || (href.length > 1 && pathname === href);
           return (
             <Link
               key={href}

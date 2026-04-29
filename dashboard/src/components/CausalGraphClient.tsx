@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { X, ArrowRight } from "lucide-react";
 import type { CausalGraphData, CausalNode, CausalEdgeData } from "@/lib/hub";
@@ -384,30 +384,48 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectedRef  = useRef(selected);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
-  // Resize observer (canvas ocupa todo o container disponível)
+  // Dimensão inicial síncrona — evita primeiro render com 0x0 ou valor hardcoded
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const { width, height } = containerRef.current.getBoundingClientRect();
+    if (width > 0) setSize({ w: width, h: Math.max(420, height) });
+  }, []);
+
+  // Atualiza ref quando selected muda (evita recriar ResizeObserver)
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
+  // Resize observer com debounce — canvas ocupa todo o container disponível
   useEffect(() => {
     if (!containerRef.current) return;
+    let timer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(entries => {
-      for (const e of entries) {
-        const sidebarOpen = !!selected;
-        setSize({
-          w: e.contentRect.width - (sidebarOpen ? 320 : 0),
-          h: Math.max(420, e.contentRect.height),
-        });
-      }
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        for (const e of entries) {
+          const sidebarW = selectedRef.current ? 320 : 0;
+          setSize({
+            w: e.contentRect.width - sidebarW,
+            h: Math.max(420, e.contentRect.height),
+          });
+        }
+      }, 80);
     });
     ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [selected]);
+    return () => { ro.disconnect(); clearTimeout(timer); };
+  }, []);
 
-  // Polling 60s — só atualiza state se IDs realmente mudaram (evita reset da física)
+  // Polling 60s com guard — evita requisições simultâneas
   useEffect(() => {
+    let fetching = false;
     const t = setInterval(async () => {
+      if (fetching) return;
+      fetching = true;
       try {
         const params = new URLSearchParams();
         params.set("limit", "300");
@@ -416,16 +434,16 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
         if (!r.ok) return;
         const fresh = (await r.json()) as CausalGraphData;
         setData((prev) => {
-          // Comparação rápida: mesma quantidade e mesmos IDs em ordem
           if (prev.nodes.length === fresh.nodes.length
               && prev.edges.length === fresh.edges.length) {
             const sameNodes = prev.nodes.every((n, i) => n.id === fresh.nodes[i].id);
             const sameEdges = prev.edges.every((e, i) => e.id === fresh.edges[i].id);
-            if (sameNodes && sameEdges) return prev;  // não força re-render
+            if (sameNodes && sameEdges) return prev;
           }
           return fresh;
         });
       } catch {}
+      finally { fetching = false; }
     }, 60_000);
     return () => clearInterval(t);
   }, [filterRelation]);
