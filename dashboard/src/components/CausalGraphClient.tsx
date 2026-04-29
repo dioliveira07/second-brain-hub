@@ -256,30 +256,29 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
 
       // Renderer sigma WebGL
       const sigma = new Sigma(graph, containerRef.current!, {
-        renderEdgeLabels:      false,
-        defaultEdgeType:       "arrow",
-        labelFont:             "'Fira Code', monospace",
-        labelSize:             11,
-        labelColor:            { color: "#8ab4cc" },
-        labelRenderedSizeThreshold: 6,
-        enableEdgeEvents: false,
+        renderEdgeLabels:           false,
+        defaultEdgeType:            "arrow",
+        defaultNodeColor:           "#06b6d4",
+        defaultEdgeColor:           "#a78bfa55",
+        labelFont:                  "'Fira Code', monospace",
+        labelSize:                  12,
+        labelWeight:                "normal",
+        labelColor:                 { color: "#8ab4cc" },
+        labelRenderedSizeThreshold: 8,
+        enableEdgeEvents:           false,
+        nodeProgramClasses:         {},
+        edgeReducer: (_edge, data) => ({
+          ...data,
+          size: Math.max(0.5, (data.size as number) * 0.4),
+        }),
       });
 
-      // Clique em nó
       sigma.on("clickNode", ({ node }) => {
         const n = nodesById[node];
         if (n) setSelected(n);
       });
 
       sigma.on("clickStage", () => setSelected(null));
-
-      // Destaque ao selecionar
-      sigma.setSetting("nodeReducer", (node, data) => {
-        const sel = selectedRef.current;
-        if (!sel) return data;
-        if (node === sel.id) return { ...data, size: (data.size as number) * 1.8, zIndex: 1 };
-        return { ...data, color: `${data.color as string}44` };
-      });
 
       graphRef.current = graph;
       sigmaRef.current = sigma;
@@ -301,8 +300,18 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     if (!sigma) return;
     sigma.setSetting("nodeReducer", (node: string, nodeData: Record<string, unknown>) => {
       if (!selected) return nodeData;
-      if (node === selected.id) return { ...nodeData, size: (nodeData.size as number) * 1.8, zIndex: 1 };
-      return { ...nodeData, color: `${nodeData.color as string}44` };
+      if (node === selected.id) return { ...nodeData, size: (nodeData.size as number) * 2, highlighted: true };
+      return { ...nodeData, color: `${nodeData.color as string}33` };
+    });
+    sigma.setSetting("edgeReducer", (edge: string, edgeData: Record<string, unknown>) => {
+      const base = { ...edgeData, size: Math.max(0.5, (edgeData.size as number) * 0.4) };
+      if (!selected) return base;
+      const g = graphRef.current;
+      if (!g) return { ...base, color: `${edgeData.color as string}22` };
+      const src = g.source(edge);
+      const tgt = g.target(edge);
+      if (src === selected.id || tgt === selected.id) return { ...base, size: 1.5 };
+      return { ...base, color: `${edgeData.color as string}11` };
     });
     sigma.refresh();
   }, [selected]);
@@ -360,7 +369,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       </div>
 
       {/* Canvas sigma */}
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", height: "100%" }} />
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", height: "100%", background: "rgba(2,6,23,0.95)" }} />
 
       {/* Sidebar */}
       {selected && (
