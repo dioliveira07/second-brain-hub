@@ -717,6 +717,36 @@ async def trigger_skills_update_all(db: AsyncSession = Depends(get_db)):
     return {"status": "queued_all", "count": result.rowcount}
 
 
+@router.post("/mcp/bootstrap-trigger")
+async def trigger_bootstrap_update(machine: str, db: AsyncSession = Depends(get_db)):
+    """Marca uma máquina para re-executar o bootstrap no próximo heartbeat."""
+    result = await db.execute(select(MCPConnection).where(MCPConnection.machine == machine))
+    conn = result.scalar_one_or_none()
+    if conn:
+        conn.pending_bootstrap_update = True
+        await db.commit()
+        return {"status": "queued", "machine": machine}
+    db.add(MCPConnection(
+        client_ip="pending",
+        machine=machine,
+        connected_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        pending_bootstrap_update=True,
+    ))
+    await db.commit()
+    return {"status": "queued", "machine": machine}
+
+
+@router.post("/mcp/bootstrap-trigger/all")
+async def trigger_bootstrap_update_all(db: AsyncSession = Depends(get_db)):
+    """Marca todas as máquinas conhecidas para re-executar o bootstrap no próximo heartbeat."""
+    result = await db.execute(
+        update(MCPConnection).values(pending_bootstrap_update=True)
+    )
+    await db.commit()
+    return {"status": "queued_all", "count": result.rowcount}
+
+
 @router.post("/mcp/connect")
 async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request, db: AsyncSession = Depends(get_db)):
     """Registra ou atualiza uma conexão de cliente MCP."""
@@ -754,8 +784,12 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
         if was_pending:
             existing.pending_skills_update = False
             existing.skills_updated_at = now
+        update_bootstrap = bool(existing.pending_bootstrap_update)
+        if update_bootstrap:
+            existing.pending_bootstrap_update = False
     else:
         update_skills = False
+        update_bootstrap = False
         db.add(MCPConnection(
             client_ip=payload.client_ip,
             client_name=payload.client_name or None,
@@ -816,6 +850,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
     hub_key = settings.hub_api_key if (existing and settings.hub_api_key) else None
 
     return {"status": "ok", "update_skills": update_skills,
+            "update_bootstrap": update_bootstrap,
             "task_notifications": task_notifications,
             "pending_memories": pending_memories,
             **({"hub_api_key": hub_key} if hub_key else {})}
@@ -843,6 +878,7 @@ async def listar_mcp_connections(db: AsyncSession = Depends(get_db)):
             "ativo": (agora - c.last_seen_at).total_seconds() < 2700,  # 45min
             "skills_updated_at": c.skills_updated_at.isoformat() if c.skills_updated_at else None,
             "skills_pending": c.pending_skills_update,
+            "bootstrap_pending": c.pending_bootstrap_update,
             "real_ip": c.real_ip,
             "hb_version": c.hb_version,
             "hb_outdated": bool(c.hb_version and _current_hb_version() and c.hb_version < _current_hb_version()),
