@@ -4,7 +4,7 @@ import { CausalGraphClient } from "@/components/CausalGraphClient";
 export default async function CausalPage() {
   let data: CausalGraphData = { nodes: [], edges: [], totals: { nodes: 0, edges: 0, edges_total_db: 0 } };
   try {
-    data = await cerebroFetch<CausalGraphData>("/causal/graph?limit=300");
+    data = await cerebroFetch<CausalGraphData>("/causal/graph?limit=2000");
   } catch {}
 
   return (
