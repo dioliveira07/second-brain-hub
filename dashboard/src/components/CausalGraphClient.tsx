@@ -223,13 +223,11 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
         const color = NODE_COLOR[n.type] || "#06b6d4";
         const isDecision = n.table === "architectural_decisions";
         graph.addNode(n.id, {
-          label:         isDecision ? n.label.slice(0, 30) : "",
-          size:          isDecision ? 14 : n.table === "memories" ? 8 : 5,
+          label: isDecision ? n.label.slice(0, 28) : "",
+          size:  isDecision ? 16 : n.table === "memories" ? 9 : 5,
           color,
-          borderColor:   color,
-          type:          isDecision ? "square" : "circle",
-          x:             Math.random() * 1000,
-          y:             Math.random() * 1000,
+          x:     Math.random() * 1000,
+          y:     Math.random() * 1000,
         });
       }
 
