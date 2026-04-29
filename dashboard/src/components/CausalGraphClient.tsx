@@ -389,21 +389,39 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
+  // ── DIAGNÓSTICO: timestamps relativos ao mount ──────────────────────────────
+  const mountT = useRef(Date.now());
+  const rel = () => `+${Date.now() - mountT.current}ms`;
+  const logRef = useRef(0);
+  const lg = (msg: string, extra?: object) => {
+    const n = ++logRef.current;
+    console.log(`[FG #${n} ${rel()}] ${msg}`, extra ?? "");
+  };
+  useEffect(() => {
+    mountT.current = Date.now();
+    lg("MOUNT — size inicial", { size: { w: 800, h: 600 }, nodes: initial.nodes.length, edges: initial.edges.length });
+    lg("container dimensions (sinc) " + JSON.stringify(containerRef.current ? containerRef.current.getBoundingClientRect() : null));
+    return () => lg("UNMOUNT");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ───────────────────────────────────────────────────────────────────────────
+
   // Resize observer (canvas ocupa todo o container disponível)
   useEffect(() => {
     if (!containerRef.current) return;
+    lg("ResizeObserver useEffect — selected=" + !!selected);
     const ro = new ResizeObserver(entries => {
       for (const e of entries) {
         const sidebarOpen = !!selected;
-        setSize({
-          w: e.contentRect.width - (sidebarOpen ? 320 : 0),
-          h: Math.max(420, e.contentRect.height),
-        });
+        const w = e.contentRect.width - (sidebarOpen ? 320 : 0);
+        const h = Math.max(420, e.contentRect.height);
+        lg("ResizeObserver fired", { w, h, sidebarOpen, containerRect: e.contentRect });
+        setSize({ w, h });
       }
     });
     ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, [selected]);
+    return () => { lg("ResizeObserver disconnect"); ro.disconnect(); };
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Polling 60s — só atualiza state se IDs realmente mudaram (evita reset da física)
   useEffect(() => {
@@ -503,48 +521,47 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     if (n) setSelected(n);
   }, [nodesById]);
 
-  const forcesApplied = useRef(false);
-  const zoomedOnce   = useRef(false);
-
   // Configura forças anti-overlap quando ref disponível
   useEffect(() => {
     const fg = fgRef.current;
+    lg("forces useEffect — fgRef=" + !!fg + " d3Force=" + (typeof fg?.d3Force));
     if (!fg || typeof fg.d3Force !== "function") return;
-    if (forcesApplied.current) return;
-    forcesApplied.current = true;
 
     let cancelled = false;
     (async () => {
+      // d3-force-3d é o que react-force-graph usa internamente; cair pra d3-force se não tiver
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let d3: any;
       try {
-        // @ts-expect-error d3-force-3d sem types
+        // @ts-expect-error d3-force-3d sem types (sub-dep de react-force-graph)
         d3 = await import("d3-force-3d");
       } catch {
         d3 = await import("d3-force");
       }
       if (cancelled) return;
 
-      // Collide baseado no raio visual + buffer generoso
+      // Visual radii: decisão 16, memória 13, signal 9.
+      // Collide deve ser radius_visual + ~12px buffer pra não encostar.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const radiusFn = (node: any): number => {
         const n = node as GraphNode;
-        if (n.table === "architectural_decisions") return 38;
-        if (n.table === "memories") return 28;
-        return 18;
+        if (n.table === "architectural_decisions") return 32;  // 16 + 16
+        if (n.table === "memories") return 26;                  // 13 + 13
+        return 20;                                              // 9 + 11
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fg.d3Force("collide", (d3 as any).forceCollide(radiusFn).strength(1).iterations(5));
+      const collide = (d3 as any).forceCollide(radiusFn).strength(1).iterations(4);
+      fg.d3Force("collide", collide);
 
+      // Charge muito mais forte para 1k+ nodes
       const charge = fg.d3Force("charge");
       if (charge?.strength) {
-        charge.strength(-600);       // repulsão mais forte
-        charge.distanceMax?.(500);
+        charge.strength(-400);
+        charge.distanceMax?.(400);  // limita alcance pra performance
       }
 
       const link = fg.d3Force("link");
-      if (link?.distance) link.distance(120);  // links mais espaçados
-      if (link?.strength) link.strength(0.3);  // link mais fraco deixa carga vencer
+      if (link?.distance) link.distance(90);
 
       try { fg.d3ReheatSimulation?.(); } catch {}
     })();
@@ -564,75 +581,55 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const drawNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const color = NODE_COLOR[node.type] || "#06b6d4";
     const isDecision = node.table === "architectural_decisions";
-    const isMemory   = node.table === "memories";
-    const isSignal   = node.table === "dev_signals";
-    const r = isDecision ? 20 : isMemory ? 13 : 7;
+    const isMemory = node.table === "memories";
+    // Maior — o force-graph tem nodeRelSize=8 mas drawNode replace ignora isso
+    const r = isDecision ? 16 : isMemory ? 13 : 9;
     const x = node.x || 0;
     const y = node.y || 0;
 
-    // Glow mais intenso para decisões
+    // Glow
     ctx.shadowColor = color;
-    ctx.shadowBlur = isDecision ? 32 : isMemory ? 16 : 8;
+    ctx.shadowBlur = isDecision ? 22 : isMemory ? 16 : 10;
 
-    // Body — diamante para decisões, círculo para o resto
+    // Body (rect pra decisões, círculo pro resto)
     ctx.beginPath();
     if (isDecision) {
-      ctx.moveTo(x, y - r * 1.3);
-      ctx.lineTo(x + r, y);
-      ctx.lineTo(x, y + r * 1.3);
-      ctx.lineTo(x - r, y);
-      ctx.closePath();
+      ctx.rect(x - r, y - r, r * 2, r * 2);
     } else {
       ctx.arc(x, y, r, 0, 2 * Math.PI);
     }
 
-    // Fill com opacidade variável por importância
-    ctx.fillStyle = isDecision ? `${color}35` : isMemory ? `${color}22` : `${color}18`;
+    // Fill 10% opacity da cor (mais visível pra área maior)
+    ctx.fillStyle = `${color}26`;
     ctx.fill();
 
     // Stroke neon
     ctx.strokeStyle = color;
-    ctx.lineWidth = (isDecision ? 2.5 : isMemory ? 1.8 : 1.2) / globalScale;
+    ctx.lineWidth = (isDecision ? 2.2 : 1.7) / globalScale;
     ctx.stroke();
-    ctx.shadowBlur = 0;
 
     // Selection ring
     if (selected?.id === node.id) {
+      ctx.shadowBlur = 0;
       ctx.beginPath();
-      ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
+      ctx.arc(x, y, r + 5, 0, 2 * Math.PI);
       ctx.strokeStyle = "#fbbf24";
       ctx.lineWidth = 2.5 / globalScale;
-      ctx.shadowColor = "#fbbf24";
-      ctx.shadowBlur = 12;
       ctx.stroke();
-      ctx.shadowBlur = 0;
     }
 
-    // Label: decisões sempre, memórias e signals só em zoom alto (globalScale > 3)
-    const showLabel = isDecision || (!isSignal && globalScale > 3);
-    if (showLabel && node.label) {
-      const label = node.label.length > 22 ? node.label.slice(0, 20) + "…" : node.label;
-      const fontSize = isDecision
-        ? Math.max(9, 14 / globalScale)
-        : Math.max(7, 10 / globalScale);
-      ctx.font = `${fontSize}px 'Fira Code', monospace`;
-      ctx.fillStyle = color;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 6;
-      ctx.fillText(label, x, y + r + 3 / globalScale);
-      ctx.shadowBlur = 0;
-    }
+    ctx.shadowBlur = 0;
 
-    // Ícone interno pequeno
+    // Ícone interno (escala com o node)
     const icon = TABLE_ICON[node.table] || "•";
-    const iconSize = isDecision ? Math.max(10, 14 / globalScale) : Math.max(7, 10 / globalScale);
-    ctx.font = `${iconSize}px 'Fira Code', monospace`;
+    ctx.font = `${isDecision ? 16 : isMemory ? 13 : 10}px 'Fira Code', monospace`;
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(icon, x, y);
+
+    // Label removido — info detalhada vem na sidebar ao clicar.
+    // Sem label evita confusão visual em grafo denso (1k+ nodes).
   }, [selected]);
 
   return (
@@ -726,10 +723,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             width={size.w}
             height={size.h}
             backgroundColor="rgba(2,6,23,0)"
-            nodeRelSize={6}
+            nodeRelSize={18}
             nodeVal={(n) => {
+              // val controla collide nativo: radius = nodeRelSize × ∛val
+              // 18 × ∛6 ≈ 33 (decisão), 18 × ∛3 ≈ 26 (memória), 18 × ∛1 = 18 (signal)
               const node = n as GraphNode;
-              return node.table === "architectural_decisions" ? 12 : node.table === "memories" ? 5 : 2;
+              return node.table === "architectural_decisions" ? 6 : node.table === "memories" ? 3 : 1;
             }}
             linkColor={(l) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
             linkWidth={(l) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
@@ -754,17 +753,35 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               ctx.arc(n.x || 0, n.y || 0, r + 2, 0, 2 * Math.PI);
               ctx.fill();
             }}
-            onNodeClick={(node) => setSelected(node as CausalNode)}
-            onEngineStop={() => {
-              if (!zoomedOnce.current && fgRef.current?.zoomToFit) {
-                zoomedOnce.current = true;
-                fgRef.current.zoomToFit(600, 60);
+            onRenderFramePre={(ctx, globalScale) => {
+              if (!(window as any).__fgRenders) (window as any).__fgRenders = 0;
+              (window as any).__fgRenders++;
+              if ((window as any).__fgRenders === 1) {
+                const fg = fgRef.current;
+                lg("ForceGraph2D 1º RENDER", {
+                  size,
+                  globalScale,
+                  zoom: fg?.zoom?.(),
+                  alpha: fg?.d3Alpha?.(),
+                  nodes: graphData.nodes.length,
+                  containerPx: containerRef.current?.getBoundingClientRect(),
+                });
               }
             }}
-            cooldownTicks={500}
-            warmupTicks={100}
-            d3VelocityDecay={0.35}
-            d3AlphaDecay={0.015}
+            onEngineStop={() => {
+              const fg = fgRef.current;
+              lg("onEngineStop", {
+                size,
+                alpha: fg?.d3Alpha?.(),
+                zoom: fg?.zoom?.(),
+                bbox: fg?.getGraphBbox?.(),
+              });
+            }}
+            onNodeClick={(node) => setSelected(node as CausalNode)}
+            cooldownTicks={400}
+            warmupTicks={50}
+            d3VelocityDecay={0.4}
+            d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
         )}
