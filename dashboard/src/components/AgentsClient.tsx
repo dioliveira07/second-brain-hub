@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Play, Trash2, Plus } from "lucide-react";
 import type { AgentInfo, AgentRunRow } from "@/lib/hub";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -15,6 +16,8 @@ const MODEL_COLOR: Record<string, string> = {
   haiku:  "#22c55e",
 };
 
+type AgentSub = { id: string; agent_name: string; projeto: string; enabled: boolean };
+
 function timeAgo(s: string | null): string {
   if (!s) return "—";
   const diff = (Date.now() - new Date(s).getTime()) / 1000;
@@ -24,19 +27,47 @@ function timeAgo(s: string | null): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
+async function cerebroPost(path: string, params: Record<string, string>) {
+  const qs = new URLSearchParams(params).toString();
+  const r = await fetch(`/painel/api/cerebro-proxy?path=${encodeURIComponent(path + "?" + qs)}`, { method: "POST" });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function cerebroDelete(path: string, params: Record<string, string>) {
+  const qs = new URLSearchParams(params).toString();
+  const r = await fetch(`/painel/api/cerebro-proxy?path=${encodeURIComponent(path + "?" + qs)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 export function AgentsClient({
   initialAgents,
   initialRuns,
+  initialSubs,
+  repos,
 }: {
   initialAgents: AgentInfo[];
   initialRuns: AgentRunRow[];
+  initialSubs: AgentSub[];
+  repos: string[];
 }) {
   const [agents] = useState<AgentInfo[]>(initialAgents);
   const [runs, setRuns] = useState<AgentRunRow[]>(initialRuns);
+  const [subs, setSubs] = useState<AgentSub[]>(initialSubs);
   const [filterAgent, setFilterAgent] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
 
-  // Polling 15s
+  // Add subscription form
+  const [newSubAgent, setNewSubAgent] = useState<string>(agents[0]?.name ?? "");
+  const [newSubRepo, setNewSubRepo] = useState<string>(repos[0] ?? "");
+  const [subLoading, setSubLoading] = useState(false);
+  const [subMsg, setSubMsg] = useState("");
+
+  // Run manually state per agent
+  const [running, setRunning] = useState<Record<string, boolean>>({});
+
+  // Polling runs 15s
   useEffect(() => {
     const t = setInterval(async () => {
       try {
@@ -75,31 +106,83 @@ export function AgentsClient({
     });
   }, [runs, filterAgent, filterStatus]);
 
+  async function addSub() {
+    if (!newSubAgent || !newSubRepo) return;
+    setSubLoading(true);
+    setSubMsg("");
+    try {
+      const sub = await cerebroPost("/agent_subscriptions", { agent_name: newSubAgent, projeto: newSubRepo });
+      setSubs(prev => {
+        const exists = prev.find(s => s.agent_name === sub.agent_name && s.projeto === sub.projeto);
+        if (exists) return prev.map(s => s.id === sub.id ? sub : s);
+        return [...prev, sub];
+      });
+      setSubMsg("ok");
+    } catch (e: unknown) {
+      setSubMsg(e instanceof Error ? e.message : "erro");
+    } finally {
+      setSubLoading(false);
+    }
+  }
+
+  async function removeSub(agent_name: string, projeto: string) {
+    try {
+      await cerebroDelete("/agent_subscriptions", { agent_name, projeto });
+      setSubs(prev => prev.filter(s => !(s.agent_name === agent_name && s.projeto === projeto)));
+    } catch {}
+  }
+
+  async function runAgent(agent_name: string) {
+    setRunning(prev => ({ ...prev, [agent_name]: true }));
+    try {
+      await cerebroPost(`/agents/${encodeURIComponent(agent_name)}/run`, {});
+    } catch {}
+    setTimeout(() => setRunning(prev => ({ ...prev, [agent_name]: false })), 3000);
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      {/* Cards de agente registrado */}
+      {/* Agent cards */}
       <div>
         <div className="label-accent" style={{ marginBottom: "0.5rem" }}>Registered Agents</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.7rem" }}>
           {agents.map(a => {
             const s = stats[a.name];
             const color = MODEL_COLOR[a.model] || "#06b6d4";
+            const isRunning = running[a.name];
             return (
               <div key={a.name} className="panel" style={{
-                padding: "0.85rem 1rem", borderLeft: `3px solid ${color}`, cursor: "pointer",
-              }}
-              onClick={() => setFilterAgent(filterAgent === a.name ? "" : a.name)}
-              >
+                padding: "0.85rem 1rem", borderLeft: `3px solid ${color}`,
+              }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-                  <div style={{ fontFamily: "'Fira Code', monospace", fontWeight: 600, color: "#e2e8f0", fontSize: "0.92rem" }}>
+                  <div
+                    style={{ fontFamily: "'Fira Code', monospace", fontWeight: 600, color: "#e2e8f0", fontSize: "0.92rem", cursor: "pointer" }}
+                    onClick={() => setFilterAgent(filterAgent === a.name ? "" : a.name)}
+                  >
                     {a.name}
                   </div>
-                  <span style={{
-                    padding: "1px 6px", borderRadius: 3, fontSize: "0.66rem",
-                    background: `${color}22`, color, fontFamily: "'Fira Code', monospace",
-                  }}>
-                    {a.model}
-                  </span>
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                    <span style={{
+                      padding: "1px 6px", borderRadius: 3, fontSize: "0.66rem",
+                      background: `${color}22`, color, fontFamily: "'Fira Code', monospace",
+                    }}>
+                      {a.model}
+                    </span>
+                    <button
+                      onClick={() => runAgent(a.name)}
+                      disabled={isRunning}
+                      title="Rodar manualmente"
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 24, height: 24, borderRadius: 4, border: "1px solid #22c55e44",
+                        background: isRunning ? "#22c55e22" : "transparent",
+                        color: "#22c55e", cursor: isRunning ? "default" : "pointer",
+                        padding: 0, transition: "background 150ms",
+                      }}
+                    >
+                      <Play size={12} />
+                    </button>
+                  </div>
                 </div>
                 <div style={{ marginTop: "0.4rem", fontSize: "0.72rem", color: "#8ab4cc", fontFamily: "'Fira Code', monospace" }}>
                   {a.cron && <div>cron: <span style={{ color: "#fbbf24" }}>{a.cron}</span></div>}
@@ -118,6 +201,91 @@ export function AgentsClient({
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* Subscriptions */}
+      <div>
+        <div className="label-accent" style={{ marginBottom: "0.5rem" }}>Subscriptions</div>
+        <div className="panel" style={{ padding: "1rem" }}>
+          {/* List */}
+          {subs.length === 0 ? (
+            <div style={{ color: "#5a7a9a", fontSize: "0.82rem", fontFamily: "'Fira Code', monospace", marginBottom: "0.8rem" }}>
+              nenhuma subscription ativa
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.8rem" }}>
+              {subs.map(s => (
+                <div key={s.id} style={{
+                  display: "flex", alignItems: "center", gap: "0.6rem",
+                  fontFamily: "'Fira Code', monospace", fontSize: "0.8rem",
+                }}>
+                  <span style={{
+                    padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem",
+                    background: "#06b6d422", color: "#06b6d4",
+                  }}>{s.agent_name}</span>
+                  <span style={{ color: "#8ab4cc" }}>→</span>
+                  <span style={{ color: "#e2e8f0" }}>{s.projeto}</span>
+                  {!s.enabled && <span style={{ color: "#ef4444", fontSize: "0.68rem" }}>(disabled)</span>}
+                  <button
+                    onClick={() => removeSub(s.agent_name, s.projeto)}
+                    title="Remover"
+                    style={{
+                      marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 22, height: 22, borderRadius: 4, border: "1px solid #ef444444",
+                      background: "transparent", color: "#ef4444", cursor: "pointer", padding: 0,
+                    }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add form */}
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", borderTop: "1px solid #1a2840", paddingTop: "0.75rem" }}>
+            <select
+              value={newSubAgent}
+              onChange={e => setNewSubAgent(e.target.value)}
+              className="cyber-input"
+              style={{ padding: "0.4rem 0.7rem", fontSize: "0.8rem" }}
+            >
+              {agents.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+            </select>
+            <span style={{ color: "#5a7a9a", fontFamily: "'Fira Code', monospace" }}>→</span>
+            <select
+              value={newSubRepo}
+              onChange={e => setNewSubRepo(e.target.value)}
+              className="cyber-input"
+              style={{ padding: "0.4rem 0.7rem", fontSize: "0.8rem" }}
+            >
+              {repos.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <button
+              onClick={addSub}
+              disabled={subLoading}
+              style={{
+                display: "flex", alignItems: "center", gap: "0.35rem",
+                padding: "0.4rem 0.8rem", borderRadius: 5,
+                border: "1px solid #06b6d444", background: "#06b6d411",
+                color: "#06b6d4", cursor: subLoading ? "default" : "pointer",
+                fontFamily: "'Fira Code', monospace", fontSize: "0.8rem",
+                transition: "background 150ms",
+              }}
+            >
+              <Plus size={13} />
+              {subLoading ? "..." : "Adicionar"}
+            </button>
+            {subMsg && (
+              <span style={{
+                fontFamily: "'Fira Code', monospace", fontSize: "0.75rem",
+                color: subMsg === "ok" ? "#22c55e" : "#ef4444",
+              }}>
+                {subMsg === "ok" ? "✓ adicionado" : subMsg}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -145,7 +313,7 @@ export function AgentsClient({
         </select>
       </div>
 
-      {/* Lista de runs */}
+      {/* Runs */}
       <div>
         <div className="label-accent" style={{ marginBottom: "0.5rem" }}>Recent Runs</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>

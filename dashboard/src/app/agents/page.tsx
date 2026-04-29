@@ -1,13 +1,20 @@
-import { cerebroFetch, AgentInfo, AgentRunRow } from "@/lib/hub";
+import { cerebroFetch, hubFetch, AgentInfo, AgentRunRow } from "@/lib/hub";
 import { AgentsClient } from "@/components/AgentsClient";
 
+type AgentSub = { id: string; agent_name: string; projeto: string; enabled: boolean };
+type Repo     = { repo: string; status: string };
+
 export default async function AgentsPage() {
-  let agents: AgentInfo[] = [];
-  let runs: AgentRunRow[] = [];
+  let agents: AgentInfo[]  = [];
+  let runs: AgentRunRow[]  = [];
+  let subs: AgentSub[]     = [];
+  let repos: Repo[]        = [];
   try {
-    [agents, runs] = await Promise.all([
+    [agents, runs, subs, repos] = await Promise.all([
       cerebroFetch<AgentInfo[]>("/agents"),
       cerebroFetch<AgentRunRow[]>("/agent_runs?limit=80"),
+      cerebroFetch<AgentSub[]>("/agent_subscriptions"),
+      hubFetch<Repo[]>("/repos"),
     ]);
   } catch {}
 
@@ -19,7 +26,12 @@ export default async function AgentsPage() {
           ◈ AGENTS — {agents.length} ativos · {runs.length} runs recentes
         </h1>
       </div>
-      <AgentsClient initialAgents={agents} initialRuns={runs} />
+      <AgentsClient
+        initialAgents={agents}
+        initialRuns={runs}
+        initialSubs={subs}
+        repos={repos.map(r => r.repo)}
+      />
     </div>
   );
 }

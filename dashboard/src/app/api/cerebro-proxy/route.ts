@@ -43,3 +43,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "upstream error" }, { status: 502 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  const path = req.nextUrl.searchParams.get("path") ?? "";
+  if (!path || !validatePath(path)) return NextResponse.json({ error: "invalid path" }, { status: 400 });
+  try {
+    const res = await fetch(`${HUB_URL}/api/cerebro${path}`, {
+      method: "DELETE",
+      headers: AUTH_HEADERS,
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch {
+    return NextResponse.json({ error: "upstream error" }, { status: 502 });
+  }
+}
