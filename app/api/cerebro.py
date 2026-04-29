@@ -787,6 +787,7 @@ async def registrar_mcp_connection(payload: MCPConnectPayload, request: Request,
         update_bootstrap = bool(existing.pending_bootstrap_update)
         if update_bootstrap:
             existing.pending_bootstrap_update = False
+            update_skills = True  # fallback: heartbeats antigos sem handler update_bootstrap recebem update_skills
     else:
         update_skills = False
         update_bootstrap = False
