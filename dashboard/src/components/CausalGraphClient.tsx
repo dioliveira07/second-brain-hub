@@ -203,6 +203,14 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       ]);
       if (cancelled) return;
 
+      const el = containerRef.current!;
+      const { width, height } = el.getBoundingClientRect();
+      console.log("[sigma] container:", width, height, "nodes:", data.nodes.length, "edges:", filteredEdges.length);
+      if (width === 0 || height === 0) {
+        console.warn("[sigma] container sem dimensões — abortando");
+        return;
+      }
+
       // Constrói grafo graphology
       const graph = new Graph({ multi: false, type: "directed" });
 
@@ -237,12 +245,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
 
       // Layout inicial — ForceAtlas2 assíncrono
       FA2.assign(graph, {
-        iterations:    200,
+        iterations: 50,
         settings: {
-          gravity:         1,
-          scalingRatio:    4,
-          slowDown:        10,
-          barnesHutOptimize: graph.order > 500,
+          gravity:           1,
+          scalingRatio:      4,
+          slowDown:          8,
+          barnesHutOptimize: graph.order > 300,
         },
       });
 
@@ -354,7 +362,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       </div>
 
       {/* Canvas sigma */}
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: "relative" }} />
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative", height: "100%" }} />
 
       {/* Sidebar */}
       {selected && (
