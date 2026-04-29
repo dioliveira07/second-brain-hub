@@ -564,8 +564,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
 
       const link = fg.d3Force("link");
       if (link?.distance) link.distance(90);
-
-      try { fg.d3ReheatSimulation?.(); } catch {}
+      // Sem reheat — continua simulação já em andamento, só atualiza as forças
     })();
 
     return () => { cancelled = true; };
@@ -780,8 +779,8 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             }}
             onNodeClick={(node) => setSelected(node as CausalNode)}
             cooldownTicks={400}
-            warmupTicks={0}
-            d3VelocityDecay={0.4}
+            warmupTicks={80}
+            d3VelocityDecay={0.55}
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
