@@ -8,7 +8,7 @@ import { Virtuoso } from "react-virtuoso";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Brain, Users, Clock, GitBranch, FileCode, Zap, Wifi, Terminal,
-  ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu, MessageSquare,
+  ChevronDown, ChevronRight, GitCommit, AlertTriangle, Edit3, Cpu, MessageSquare, Copy, Check,
 } from "lucide-react";
 import type { Sessao, AfinidadeItem, MCPConn, SSHIdentity, SSHSession, Sinal, PadraoGlobal, ScorecardDev, Conflito, SessoesChatResponse, SessaoChatMeta, ChatSessaoDetalhe } from "@/app/cerebro/page";
 
@@ -469,6 +469,59 @@ function AfinidadeTable({ afinidade }: { afinidade: AfinidadeItem[] }) {
 // ── MCP ───────────────────────────────────────────────────────────────────────
 
 type SSHIdentityWithLocal = SSHIdentity & { _sessionsHere: SSHSession[] };
+
+const CMDS = {
+  unix: {
+    bootstrap: "curl -s http://hub.fluxiom.com.br/api/cerebro/bootstrap | python3",
+    mcp:       "claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse",
+  },
+  win: {
+    bootstrap: "python -c \"import urllib.request; exec(urllib.request.urlopen('http://hub.fluxiom.com.br/api/cerebro/bootstrap').read().decode())\"",
+    mcp:       "claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse",
+  },
+};
+
+function CopyBtn({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setDone(true);
+      setTimeout(() => setDone(false), 1800);
+    });
+  }
+  return (
+    <button onClick={copy} title="Copiar" style={{ background: "none", border: "none", cursor: "pointer", color: done ? C.green : C.dim, padding: "0 2px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+      {done ? <Check size={11} /> : <Copy size={11} />}
+    </button>
+  );
+}
+
+function BootstrapInstructions() {
+  const [os, setOs] = useState<"unix" | "win">("unix");
+  const cmds = CMDS[os];
+  const row = (label: string, cmd: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+      <span style={{ color: C.muted, fontFamily: "var(--mono)", fontSize: "0.6rem", flexShrink: 0, width: 62 }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", background: "rgba(0,0,0,0.25)", border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 6px", minWidth: 0, flex: 1 }}>
+        <code style={{ color: C.dim, fontFamily: "var(--mono)", fontSize: "0.6rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{cmd}</code>
+        <CopyBtn text={cmd} />
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", minWidth: 0, flex: 1 }}>
+      <div style={{ display: "flex", gap: "0.3rem", marginBottom: "0.1rem" }}>
+        {(["unix", "win"] as const).map(o => (
+          <button key={o} onClick={() => setOs(o)} style={{ background: os === o ? `${C.cyan}18` : "none", border: `1px solid ${os === o ? C.cyan + "55" : C.border}`, color: os === o ? C.cyan : C.dim, borderRadius: 4, padding: "1px 8px", fontFamily: "var(--mono)", fontSize: "0.58rem", cursor: "pointer" }}>
+            {o === "unix" ? "Linux / Mac" : "Windows"}
+          </button>
+        ))}
+      </div>
+      {row("bootstrap", cmds.bootstrap)}
+      {row("mcp", cmds.mcp)}
+    </div>
+  );
+}
 
 function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdentity[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -1314,11 +1367,8 @@ export function CerebroClient({
         {/* MCP */}
         {tab === "mcp" && (
           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "0.5rem" }}>
-              <div style={{ fontFamily: "var(--mono)", fontSize: "0.62rem", color: C.dim, lineHeight: 1.6 }}>
-                <span style={{ color: C.muted }}>bootstrap:</span> <code style={{ color: C.dim }}>python3 -c &quot;import urllib.request; exec(urllib.request.urlopen(&apos;http://hub.fluxiom.com.br/api/cerebro/bootstrap&apos;).read().decode())&quot;</code><br />
-                <span style={{ color: C.muted }}>mcp:</span> <code style={{ color: C.dim }}>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse</code>
-              </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "0.75rem" }}>
+              <BootstrapInstructions />
               <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
                 <button
                   onClick={broadcastBootstrap}
