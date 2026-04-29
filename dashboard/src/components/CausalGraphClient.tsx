@@ -385,8 +385,9 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  const selectedRef  = useRef(selected);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const selectedRef   = useRef(selected);
+  const zoomedOnce    = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
@@ -721,7 +722,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
             width={size.w}
             height={size.h}
-            onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
+            onEngineStop={() => {
+              if (!zoomedOnce.current) {
+                zoomedOnce.current = true;
+                fgRef.current?.zoomToFit(400, 40);
+              }
+            }}
             backgroundColor="rgba(2,6,23,0)"
             nodeRelSize={18}
             nodeVal={(n) => {
