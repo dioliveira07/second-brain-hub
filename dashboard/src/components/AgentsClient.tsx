@@ -295,6 +295,7 @@ export function AgentsClient({ initialAgents, initialRuns, initialSubs, repos }:
   const [subLoading, setSubLoading] = useState(false);
   const [subMsg, setSubMsg] = useState("");
   const [running, setRunning] = useState<Record<string, boolean>>({});
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(async () => {
@@ -466,8 +467,12 @@ export function AgentsClient({ initialAgents, initialRuns, initialSubs, repos }:
             {filtered.slice(0, 50).map(r => {
               const sColor = STATUS_COLOR[r.status] || "#8ab4cc";
               const mColor = MODEL_COLOR[r.model || ""] || "#5a7a9a";
+              const expanded = expandedRun === r.id;
+              const hasDetail = !!(r.error_message || (r.output && Object.keys(r.output).length > 0));
               return (
-                <div key={r.id} className="panel" style={{ padding: "0.55rem 0.85rem", borderLeft: `2px solid ${sColor}`, fontFamily: "'Fira Code', monospace", fontSize: "0.78rem" }}>
+                <div key={r.id} className="panel"
+                  onClick={() => hasDetail && setExpandedRun(expanded ? null : r.id)}
+                  style={{ padding: "0.55rem 0.85rem", borderLeft: `2px solid ${sColor}`, fontFamily: "'Fira Code', monospace", fontSize: "0.78rem", cursor: hasDetail ? "pointer" : "default" }}>
                   <div style={{ display: "flex", gap: "0.7rem", alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ color: sColor, fontWeight: 600 }}>{r.status}</span>
                     <span style={{ color: "#e2e8f0" }}>{r.agent_name}</span>
@@ -476,9 +481,22 @@ export function AgentsClient({ initialAgents, initialRuns, initialSubs, repos }:
                     <span style={{ color: "#5a7a9a", fontSize: "0.7rem" }}>{r.duration_ms || 0}ms</span>
                     {r.cost_estimate ? <span style={{ color: "#fbbf24", fontSize: "0.7rem" }}>${r.cost_estimate.toFixed(4)}</span> : null}
                     <span style={{ color: "#5a7a9a", fontSize: "0.7rem", marginLeft: "auto" }}>{timeAgo(r.started_at)}</span>
+                    {hasDetail && <ChevronDown size={11} style={{ color: "#5a7a9a", transform: expanded ? "rotate(180deg)" : undefined, transition: "transform 150ms", flexShrink: 0 }} />}
                   </div>
-                  {r.error_message && <div style={{ marginTop: "0.3rem", color: "#ef4444", fontSize: "0.7rem" }}>{r.error_message.slice(0, 200)}</div>}
-                  {r.output && Object.keys(r.output).length > 0 && <div style={{ marginTop: "0.25rem", color: "#a8c0dc", fontSize: "0.7rem" }}>{JSON.stringify(r.output).slice(0, 220)}</div>}
+                  {expanded && (
+                    <div style={{ marginTop: "0.6rem", borderTop: "1px solid #1a2840", paddingTop: "0.6rem" }}>
+                      {r.error_message && (
+                        <div style={{ color: "#ef4444", fontSize: "0.72rem", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                          {r.error_message}
+                        </div>
+                      )}
+                      {r.output && Object.keys(r.output).length > 0 && (
+                        <pre style={{ margin: 0, color: "#a8c0dc", fontSize: "0.72rem", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "rgba(6,182,212,0.04)", padding: "0.5rem", borderRadius: 4 }}>
+                          {JSON.stringify(r.output, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
