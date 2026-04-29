@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Play, Trash2, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Play, Trash2, Plus } from "lucide-react";
 import type { AgentInfo, AgentRunRow } from "@/lib/hub";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -60,9 +60,22 @@ export function AgentsClient({
 
   // Add subscription form
   const [newSubAgent, setNewSubAgent] = useState<string>(agents[0]?.name ?? "");
-  const [newSubRepo, setNewSubRepo] = useState<string>(repos[0] ?? "");
+  const [newSubRepos, setNewSubRepos] = useState<Set<string>>(new Set());
+  const [repoDropOpen, setRepoDropOpen] = useState(false);
+  const repoDropRef = useRef<HTMLDivElement>(null);
   const [subLoading, setSubLoading] = useState(false);
   const [subMsg, setSubMsg] = useState("");
+
+  // Close repo dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (repoDropRef.current && !repoDropRef.current.contains(e.target as Node)) {
+        setRepoDropOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   // Run manually state per agent
   const [running, setRunning] = useState<Record<string, boolean>>({});
@@ -107,22 +120,30 @@ export function AgentsClient({
   }, [runs, filterAgent, filterStatus]);
 
   async function addSub() {
-    if (!newSubAgent || !newSubRepo) return;
+    if (!newSubAgent || newSubRepos.size === 0) return;
     setSubLoading(true);
     setSubMsg("");
-    try {
-      const sub = await cerebroPost("/agent_subscriptions", { agent_name: newSubAgent, projeto: newSubRepo });
-      setSubs(prev => {
-        const exists = prev.find(s => s.agent_name === sub.agent_name && s.projeto === sub.projeto);
-        if (exists) return prev.map(s => s.id === sub.id ? sub : s);
-        return [...prev, sub];
-      });
-      setSubMsg("ok");
-    } catch (e: unknown) {
-      setSubMsg(e instanceof Error ? e.message : "erro");
-    } finally {
-      setSubLoading(false);
+    let errors = 0;
+    const results: AgentSub[] = [];
+    for (const repo of newSubRepos) {
+      try {
+        const sub = await cerebroPost("/agent_subscriptions", { agent_name: newSubAgent, projeto: repo });
+        results.push(sub as AgentSub);
+      } catch {
+        errors++;
+      }
     }
+    setSubs(prev => {
+      let next = [...prev];
+      for (const sub of results) {
+        const idx = next.findIndex(s => s.agent_name === sub.agent_name && s.projeto === sub.projeto);
+        if (idx >= 0) next[idx] = sub; else next = [...next, sub];
+      }
+      return next;
+    });
+    setSubMsg(errors === 0 ? "ok" : `${errors} erro(s)`);
+    if (errors === 0) setNewSubRepos(new Set());
+    setSubLoading(false);
   }
 
   async function removeSub(agent_name: string, projeto: string) {
@@ -254,17 +275,80 @@ export function AgentsClient({
               {agents.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
             </select>
             <span style={{ color: "#5a7a9a", fontFamily: "'Fira Code', monospace" }}>→</span>
-            <select
-              value={newSubRepo}
-              onChange={e => setNewSubRepo(e.target.value)}
-              className="cyber-input"
-              style={{ padding: "0.4rem 0.7rem", fontSize: "0.8rem" }}
-            >
-              {repos.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
+            {/* Multi-repo checkbox dropdown */}
+            <div ref={repoDropRef} style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setRepoDropOpen(o => !o)}
+                className="cyber-input"
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.4rem",
+                  padding: "0.4rem 0.7rem", fontSize: "0.8rem", cursor: "pointer",
+                  minWidth: 160, justifyContent: "space-between",
+                  background: repoDropOpen ? "rgba(6,182,212,0.08)" : undefined,
+                }}
+              >
+                <span style={{ color: newSubRepos.size === 0 ? "#5a7a9a" : "#e2e8f0" }}>
+                  {newSubRepos.size === 0
+                    ? "selecionar repos"
+                    : newSubRepos.size === 1
+                      ? [...newSubRepos][0]
+                      : `${newSubRepos.size} repos`}
+                </span>
+                <ChevronDown size={12} style={{ color: "#5a7a9a", flexShrink: 0, transform: repoDropOpen ? "rotate(180deg)" : undefined, transition: "transform 150ms" }} />
+              </button>
+              {repoDropOpen && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+                  background: "rgba(10,22,40,0.98)", border: "1px solid #1a2840",
+                  borderRadius: 6, minWidth: 220, maxHeight: 260, overflowY: "auto",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                }}>
+                  {/* Select all */}
+                  <label style={{
+                    display: "flex", alignItems: "center", gap: "0.5rem",
+                    padding: "0.5rem 0.75rem", cursor: "pointer",
+                    borderBottom: "1px solid #1a2840",
+                    fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", color: "#8ab4cc",
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newSubRepos.size === repos.length && repos.length > 0}
+                      onChange={e => setNewSubRepos(e.target.checked ? new Set(repos) : new Set())}
+                      style={{ accentColor: "#06b6d4", cursor: "pointer" }}
+                    />
+                    <span style={{ color: "#06b6d4" }}>todos ({repos.length})</span>
+                  </label>
+                  {repos.map(r => (
+                    <label key={r} style={{
+                      display: "flex", alignItems: "center", gap: "0.5rem",
+                      padding: "0.42rem 0.75rem", cursor: "pointer",
+                      fontFamily: "'Fira Code', monospace", fontSize: "0.78rem",
+                      color: newSubRepos.has(r) ? "#e2e8f0" : "#8ab4cc",
+                      background: newSubRepos.has(r) ? "rgba(6,182,212,0.06)" : "transparent",
+                      transition: "background 100ms",
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={newSubRepos.has(r)}
+                        onChange={e => {
+                          setNewSubRepos(prev => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(r); else next.delete(r);
+                            return next;
+                          });
+                        }}
+                        style={{ accentColor: "#06b6d4", cursor: "pointer", flexShrink: 0 }}
+                      />
+                      {r}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={addSub}
-              disabled={subLoading}
+              disabled={subLoading || newSubRepos.size === 0}
               style={{
                 display: "flex", alignItems: "center", gap: "0.35rem",
                 padding: "0.4rem 0.8rem", borderRadius: 5,
