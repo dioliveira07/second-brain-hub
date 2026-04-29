@@ -1433,7 +1433,7 @@ if not hub_key:
     }}).encode())
     hub_key = (resp2 or {{}}).get("hub_api_key", "")
 if not hub_key:
-    print("ERRO: maquina nao registrada no hub — contate o administrador")
+    print("ERRO: maquina nao registrada no hub - contate o administrador")
     raise SystemExit(1)
 
 # 2. Salvar chave
@@ -1469,7 +1469,7 @@ for fname, dest, required in _files:
         continue
     content = d["content"]
     if not _verify_signature(content, d.get("signature", "")):
-        print(f"ERRO: assinatura invalida para {{fname}} — possivel adulteracao")
+        print(f"ERRO: assinatura invalida para {{fname}} - possivel adulteracao")
         raise SystemExit(1)
     dest.write_text(content, encoding='utf-8')
     try:
@@ -1590,11 +1590,11 @@ try:
             "client_ip": ip, "client_name": f"bootstrap/{{machine}}", "machine": machine,
             "hb_version": _hb_ver,
         }}).encode())
-        print(f"OK  hub notificado — HB instalado: {{_hb_ver}}")
+        print("OK  hub notificado -> HB instalado: " + _hb_ver)
 except Exception as _e:
     print("WARN nao foi possivel notificar hub: " + str(_e))
 
-print("\\nBOOTSTRAP CONCLUIDO — proximo prompt ja sera autenticado\\n")
+print("\\nBOOTSTRAP CONCLUIDO - proximo prompt ja sera autenticado\\n")
 '''
     return script
 
