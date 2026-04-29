@@ -1115,6 +1115,19 @@ export function CerebroClient({
     }
   }
 
+  const [bootstrapBroadcasting, setBootstrapBroadcasting] = useState(false);
+  async function broadcastBootstrap() {
+    setBootstrapBroadcasting(true);
+    try {
+      const res = await fetch(`${PROXY}?path=/mcp/bootstrap-trigger/all`, { method: "POST" });
+      if (res.ok) {
+        setLocalMcpConns(prev => prev.map(c => ({ ...c, bootstrap_pending: true })));
+      }
+    } finally {
+      setBootstrapBroadcasting(false);
+    }
+  }
+
   const activeMCP  = localMcpConns.filter(c => c.ativo);
   const recentSess = sessoes.filter(s => s.minutos_atras < 60);
 
@@ -1298,7 +1311,15 @@ export function CerebroClient({
         {/* MCP */}
         {tab === "mcp" && (
           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", flexShrink: 0, gap: "0.5rem" }}>
+              <button
+                onClick={broadcastBootstrap}
+                disabled={bootstrapBroadcasting}
+                style={{ background: bootstrapBroadcasting ? `${C.dim}22` : `${C.purple}18`, border: `1px solid ${bootstrapBroadcasting ? C.dim : C.purple}55`, color: bootstrapBroadcasting ? C.dim : C.purple, borderRadius: 6, padding: "0.35rem 0.85rem", fontFamily: "var(--mono)", fontSize: "0.72rem", cursor: bootstrapBroadcasting ? "default" : "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+              >
+                <Zap size={12} />
+                {bootstrapBroadcasting ? "enviando..." : "re-bootstrap"}
+              </button>
               <button
                 onClick={broadcastSkills}
                 disabled={skillsBroadcasting}
