@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Play, Trash2, Plus } from "lucide-react";
 import type { AgentInfo, AgentRunRow } from "@/lib/hub";
@@ -41,6 +42,132 @@ async function cerebroDelete(path: string, params: Record<string, string>) {
   return r.json();
 }
 
+// Portal-based checkbox dropdown — escapes overflow:hidden parents
+function CheckboxDropdown({
+  items, selected, onChange, placeholder,
+}: {
+  items: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        dropRef.current?.contains(e.target as Node)
+      ) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  function toggle() {
+    if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
+    setOpen(o => !o);
+  }
+
+  function toggleItem(item: string, checked: boolean) {
+    const next = new Set(selected);
+    if (checked) next.add(item); else next.delete(item);
+    onChange(next);
+  }
+
+  const allChecked = items.length > 0 && selected.size === items.length;
+
+  const label =
+    selected.size === 0 ? placeholder :
+    selected.size === 1 ? [...selected][0] :
+    `${selected.size} selecionados`;
+
+  const dropdown = open && rect
+    ? createPortal(
+        <div
+          ref={dropRef}
+          style={{
+            position: "fixed",
+            top: rect.bottom + 4,
+            left: rect.left,
+            zIndex: 9999,
+            minWidth: Math.max(rect.width, 220),
+            maxHeight: 280,
+            overflowY: "auto",
+            background: "rgba(8,18,36,0.98)",
+            border: "1px solid #1e3050",
+            borderRadius: 6,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+          }}
+        >
+          <label style={{
+            display: "flex", alignItems: "center", gap: "0.5rem",
+            padding: "0.5rem 0.75rem", cursor: "pointer",
+            borderBottom: "1px solid #1a2840",
+            fontFamily: "'Fira Code', monospace", fontSize: "0.74rem", color: "#06b6d4",
+          }}>
+            <input
+              type="checkbox"
+              checked={allChecked}
+              onChange={e => onChange(e.target.checked ? new Set(items) : new Set())}
+              style={{ accentColor: "#06b6d4", cursor: "pointer" }}
+            />
+            todos ({items.length})
+          </label>
+          {items.map(item => (
+            <label key={item} style={{
+              display: "flex", alignItems: "center", gap: "0.5rem",
+              padding: "0.38rem 0.75rem", cursor: "pointer",
+              fontFamily: "'Fira Code', monospace", fontSize: "0.78rem",
+              color: selected.has(item) ? "#e2e8f0" : "#8ab4cc",
+              background: selected.has(item) ? "rgba(6,182,212,0.07)" : "transparent",
+              transition: "background 80ms",
+            }}>
+              <input
+                type="checkbox"
+                checked={selected.has(item)}
+                onChange={e => toggleItem(item, e.target.checked)}
+                style={{ accentColor: "#06b6d4", cursor: "pointer", flexShrink: 0 }}
+              />
+              {item}
+            </label>
+          ))}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        className="cyber-input"
+        style={{
+          display: "flex", alignItems: "center", gap: "0.4rem",
+          padding: "0.4rem 0.7rem", fontSize: "0.8rem", cursor: "pointer",
+          minWidth: 160, justifyContent: "space-between",
+          background: open ? "rgba(6,182,212,0.08)" : undefined,
+        }}
+      >
+        <span style={{ color: selected.size === 0 ? "#5a7a9a" : "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{ color: "#5a7a9a", flexShrink: 0, transform: open ? "rotate(180deg)" : undefined, transition: "transform 150ms" }}
+        />
+      </button>
+      {dropdown}
+    </>
+  );
+}
+
 export function AgentsClient({
   initialAgents,
   initialRuns,
@@ -58,24 +185,11 @@ export function AgentsClient({
   const [filterAgent, setFilterAgent] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
 
-  // Add subscription form
-  const [newSubAgent, setNewSubAgent] = useState<string>(agents[0]?.name ?? "");
-  const [newSubRepos, setNewSubRepos] = useState<Set<string>>(new Set());
-  const [repoDropOpen, setRepoDropOpen] = useState(false);
-  const repoDropRef = useRef<HTMLDivElement>(null);
+  // Add subscription form — both selections persist after save
+  const [newSubAgents, setNewSubAgents] = useState<Set<string>>(new Set());
+  const [newSubRepos,  setNewSubRepos]  = useState<Set<string>>(new Set());
   const [subLoading, setSubLoading] = useState(false);
   const [subMsg, setSubMsg] = useState("");
-
-  // Close repo dropdown on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (repoDropRef.current && !repoDropRef.current.contains(e.target as Node)) {
-        setRepoDropOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
   // Run manually state per agent
   const [running, setRunning] = useState<Record<string, boolean>>({});
@@ -96,7 +210,7 @@ export function AgentsClient({
   }, [filterAgent, filterStatus]);
 
   const stats = useMemo(() => {
-    const byAgent: Record<string, { total: number; ok: number; err: number; cost: number; avgMs: number; }> = {};
+    const byAgent: Record<string, { total: number; ok: number; err: number; cost: number; avgMs: number }> = {};
     for (const r of runs) {
       const a = byAgent[r.agent_name] ||= { total: 0, ok: 0, err: 0, cost: 0, avgMs: 0 };
       a.total++;
@@ -120,17 +234,19 @@ export function AgentsClient({
   }, [runs, filterAgent, filterStatus]);
 
   async function addSub() {
-    if (!newSubAgent || newSubRepos.size === 0) return;
+    if (newSubAgents.size === 0 || newSubRepos.size === 0) return;
     setSubLoading(true);
     setSubMsg("");
     let errors = 0;
     const results: AgentSub[] = [];
-    for (const repo of newSubRepos) {
-      try {
-        const sub = await cerebroPost("/agent_subscriptions", { agent_name: newSubAgent, projeto: repo });
-        results.push(sub as AgentSub);
-      } catch {
-        errors++;
+    for (const agent of newSubAgents) {
+      for (const repo of newSubRepos) {
+        try {
+          const sub = await cerebroPost("/agent_subscriptions", { agent_name: agent, projeto: repo });
+          results.push(sub as AgentSub);
+        } catch {
+          errors++;
+        }
       }
     }
     setSubs(prev => {
@@ -141,8 +257,8 @@ export function AgentsClient({
       }
       return next;
     });
-    setSubMsg(errors === 0 ? "ok" : `${errors} erro(s)`);
-    if (errors === 0) setNewSubRepos(new Set());
+    // Keep both selections so user can adjust and re-add for a different combo
+    setSubMsg(errors === 0 ? `+${results.length} ok` : `${results.length} ok · ${errors} erro(s)`);
     setSubLoading(false);
   }
 
@@ -160,6 +276,8 @@ export function AgentsClient({
     } catch {}
     setTimeout(() => setRunning(prev => ({ ...prev, [agent_name]: false })), 3000);
   }
+
+  const agentNames = agents.map(a => a.name);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -265,108 +383,49 @@ export function AgentsClient({
           )}
 
           {/* Add form */}
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", borderTop: "1px solid #1a2840", paddingTop: "0.75rem" }}>
-            <select
-              value={newSubAgent}
-              onChange={e => setNewSubAgent(e.target.value)}
-              className="cyber-input"
-              style={{ padding: "0.4rem 0.7rem", fontSize: "0.8rem" }}
-            >
-              {agents.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-            </select>
+          <div style={{
+            display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap",
+            borderTop: "1px solid #1a2840", paddingTop: "0.75rem",
+          }}>
+            <CheckboxDropdown
+              items={agentNames}
+              selected={newSubAgents}
+              onChange={setNewSubAgents}
+              placeholder="agentes"
+            />
             <span style={{ color: "#5a7a9a", fontFamily: "'Fira Code', monospace" }}>→</span>
-            {/* Multi-repo checkbox dropdown */}
-            <div ref={repoDropRef} style={{ position: "relative" }}>
-              <button
-                type="button"
-                onClick={() => setRepoDropOpen(o => !o)}
-                className="cyber-input"
-                style={{
-                  display: "flex", alignItems: "center", gap: "0.4rem",
-                  padding: "0.4rem 0.7rem", fontSize: "0.8rem", cursor: "pointer",
-                  minWidth: 160, justifyContent: "space-between",
-                  background: repoDropOpen ? "rgba(6,182,212,0.08)" : undefined,
-                }}
-              >
-                <span style={{ color: newSubRepos.size === 0 ? "#5a7a9a" : "#e2e8f0" }}>
-                  {newSubRepos.size === 0
-                    ? "selecionar repos"
-                    : newSubRepos.size === 1
-                      ? [...newSubRepos][0]
-                      : `${newSubRepos.size} repos`}
-                </span>
-                <ChevronDown size={12} style={{ color: "#5a7a9a", flexShrink: 0, transform: repoDropOpen ? "rotate(180deg)" : undefined, transition: "transform 150ms" }} />
-              </button>
-              {repoDropOpen && (
-                <div style={{
-                  position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
-                  background: "rgba(10,22,40,0.98)", border: "1px solid #1a2840",
-                  borderRadius: 6, minWidth: 220, maxHeight: 260, overflowY: "auto",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                }}>
-                  {/* Select all */}
-                  <label style={{
-                    display: "flex", alignItems: "center", gap: "0.5rem",
-                    padding: "0.5rem 0.75rem", cursor: "pointer",
-                    borderBottom: "1px solid #1a2840",
-                    fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", color: "#8ab4cc",
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={newSubRepos.size === repos.length && repos.length > 0}
-                      onChange={e => setNewSubRepos(e.target.checked ? new Set(repos) : new Set())}
-                      style={{ accentColor: "#06b6d4", cursor: "pointer" }}
-                    />
-                    <span style={{ color: "#06b6d4" }}>todos ({repos.length})</span>
-                  </label>
-                  {repos.map(r => (
-                    <label key={r} style={{
-                      display: "flex", alignItems: "center", gap: "0.5rem",
-                      padding: "0.42rem 0.75rem", cursor: "pointer",
-                      fontFamily: "'Fira Code', monospace", fontSize: "0.78rem",
-                      color: newSubRepos.has(r) ? "#e2e8f0" : "#8ab4cc",
-                      background: newSubRepos.has(r) ? "rgba(6,182,212,0.06)" : "transparent",
-                      transition: "background 100ms",
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={newSubRepos.has(r)}
-                        onChange={e => {
-                          setNewSubRepos(prev => {
-                            const next = new Set(prev);
-                            if (e.target.checked) next.add(r); else next.delete(r);
-                            return next;
-                          });
-                        }}
-                        style={{ accentColor: "#06b6d4", cursor: "pointer", flexShrink: 0 }}
-                      />
-                      {r}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            <CheckboxDropdown
+              items={repos}
+              selected={newSubRepos}
+              onChange={setNewSubRepos}
+              placeholder="repos"
+            />
             <button
               onClick={addSub}
-              disabled={subLoading || newSubRepos.size === 0}
+              disabled={subLoading || newSubAgents.size === 0 || newSubRepos.size === 0}
               style={{
                 display: "flex", alignItems: "center", gap: "0.35rem",
                 padding: "0.4rem 0.8rem", borderRadius: 5,
                 border: "1px solid #06b6d444", background: "#06b6d411",
-                color: "#06b6d4", cursor: subLoading ? "default" : "pointer",
+                color: (newSubAgents.size === 0 || newSubRepos.size === 0) ? "#3a6a8a" : "#06b6d4",
+                cursor: (subLoading || newSubAgents.size === 0 || newSubRepos.size === 0) ? "default" : "pointer",
                 fontFamily: "'Fira Code', monospace", fontSize: "0.8rem",
                 transition: "background 150ms",
               }}
             >
               <Plus size={13} />
-              {subLoading ? "..." : "Adicionar"}
+              {subLoading
+                ? "..."
+                : newSubAgents.size > 0 && newSubRepos.size > 0
+                  ? `Adicionar (${newSubAgents.size * newSubRepos.size})`
+                  : "Adicionar"}
             </button>
             {subMsg && (
               <span style={{
                 fontFamily: "'Fira Code', monospace", fontSize: "0.75rem",
-                color: subMsg === "ok" ? "#22c55e" : "#ef4444",
+                color: subMsg.includes("erro") ? "#ef4444" : "#22c55e",
               }}>
-                {subMsg === "ok" ? "✓ adicionado" : subMsg}
+                {subMsg}
               </span>
             )}
           </div>
