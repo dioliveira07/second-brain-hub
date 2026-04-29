@@ -257,21 +257,53 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
       // Renderer sigma WebGL
       const sigma = new Sigma(graph, containerRef.current!, {
         renderEdgeLabels:           false,
-        defaultEdgeType:            "arrow",
+        defaultEdgeType:            "line",
         defaultNodeColor:           "#06b6d4",
-        defaultEdgeColor:           "#a78bfa55",
+        defaultEdgeColor:           "#a78bfa44",
         labelFont:                  "'Fira Code', monospace",
-        labelSize:                  12,
+        labelSize:                  13,
         labelWeight:                "normal",
         labelColor:                 { color: "#8ab4cc" },
         labelRenderedSizeThreshold: 8,
         enableEdgeEvents:           false,
-        nodeProgramClasses:         {},
         edgeReducer: (_edge, data) => ({
           ...data,
-          size: Math.max(0.5, (data.size as number) * 0.4),
+          color: data.color ?? "#a78bfa44",
+          size:  Math.max(0.4, (data.size as number) * 0.35),
         }),
       });
+
+      // Glow overlay via canvas 2D sobre o WebGL
+      const glowCanvas = document.createElement("canvas");
+      glowCanvas.style.cssText = "position:absolute;inset:0;pointer-events:none;";
+      containerRef.current!.appendChild(glowCanvas);
+
+      const drawGlow = () => {
+        const el = containerRef.current;
+        if (!el || !glowCanvas) return;
+        glowCanvas.width  = el.clientWidth;
+        glowCanvas.height = el.clientHeight;
+        const ctx = glowCanvas.getContext("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, glowCanvas.width, glowCanvas.height);
+        graph.forEachNode((nodeId) => {
+          const displayed = sigma.getNodeDisplayData(nodeId);
+          if (!displayed) return;
+          const { x, y, size, color } = displayed as { x: number; y: number; size: number; color: string };
+          const px = x * glowCanvas.width;
+          const py = y * glowCanvas.height;
+          const r  = (size / 2) * sigma.getCamera().ratio * 0.3;
+          ctx.shadowColor = color ?? "#06b6d4";
+          ctx.shadowBlur  = r * 2.5;
+          ctx.beginPath();
+          ctx.arc(px, py, r * 0.5, 0, Math.PI * 2);
+          ctx.fillStyle = `${color ?? "#06b6d4"}55`;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+      };
+
+      sigma.on("afterRender", drawGlow);
 
       sigma.on("clickNode", ({ node }) => {
         const n = nodesById[node];
