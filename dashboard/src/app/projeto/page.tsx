@@ -153,8 +153,8 @@ function ProjetoTimelineContent() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem", maxWidth: 800 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.dim, textDecoration: "none", marginBottom: "0.5rem" }}>
-          <ArrowLeft size={12} /> Dashboard
+        <Link href="/projeto" style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.dim, textDecoration: "none", marginBottom: "0.5rem" }}>
+          <ArrowLeft size={12} /> Projetos
         </Link>
         <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: C.dim, letterSpacing: "0.08em" }}>Timeline</div>
         <h2 style={{ fontFamily: "var(--mono)", fontSize: "1.5rem", fontWeight: 700, color: C.text, letterSpacing: "-0.02em" }}>
