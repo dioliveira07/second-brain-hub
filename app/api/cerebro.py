@@ -1575,6 +1575,25 @@ else:
     except Exception as _e:
         print("WARN cron nao instalado: " + str(_e))
 
+# 7. Confirmar versão instalada ao hub
+try:
+    import re as _re2
+    _hb_file = HOOKS / "prompt_mcp_heartbeat.py"
+    _hb_ver = ""
+    if _hb_file.exists():
+        for _line in _hb_file.read_text(encoding="utf-8").splitlines():
+            if _line.startswith("HB_VERSION"):
+                _hb_ver = _line.split("=")[1].strip().strip("\\"\\'")
+                break
+    if _hb_ver:
+        _post("/api/cerebro/mcp/connect", json.dumps({{
+            "client_ip": ip, "client_name": f"bootstrap/{{machine}}", "machine": machine,
+            "hb_version": _hb_ver,
+        }}).encode())
+        print(f"OK  hub notificado — HB instalado: {{_hb_ver}}")
+except Exception as _e:
+    print("WARN nao foi possivel notificar hub: " + str(_e))
+
 print("\\nBOOTSTRAP CONCLUIDO — proximo prompt ja sera autenticado\\n")
 '''
     return script
