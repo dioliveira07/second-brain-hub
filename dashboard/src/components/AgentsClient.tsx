@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Play, Trash2, Plus, LayoutGrid, Table2 } from "lucide-react";
+import { ChevronDown, Play, Plus, LayoutGrid, Table2 } from "lucide-react";
 import type { AgentInfo, AgentRunRow } from "@/lib/hub";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -346,13 +346,6 @@ export function AgentsClient({ initialAgents, initialRuns, initialSubs, repos }:
     setSubLoading(false);
   }
 
-  async function removeSub(agent_name: string, projeto: string) {
-    try {
-      await cerebroDelete("/agent_subscriptions", { agent_name, projeto });
-      setSubs(prev => prev.filter(s => !(s.agent_name === agent_name && s.projeto === projeto)));
-    } catch {}
-  }
-
   async function runAgent(agent_name: string) {
     setRunning(prev => ({ ...prev, [agent_name]: true }));
     try { await cerebroPost(`/agents/${encodeURIComponent(agent_name)}/run`, {}); } catch {}
@@ -436,40 +429,20 @@ export function AgentsClient({ initialAgents, initialRuns, initialSubs, repos }:
           </div>
         </div>
 
-        {/* Subscriptions */}
-        <div>
-          <div className="label-accent" style={{ marginBottom: "0.5rem" }}>Subscriptions</div>
-          <div className="panel" style={{ padding: "1rem" }}>
-            {subs.length === 0 ? (
-              <div style={{ color: "#5a7a9a", fontSize: "0.82rem", fontFamily: "'Fira Code', monospace", marginBottom: "0.8rem" }}>nenhuma subscription ativa</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.8rem" }}>
-                {subs.map(s => (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontFamily: "'Fira Code', monospace", fontSize: "0.8rem" }}>
-                    <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: "0.7rem", background: "#06b6d422", color: "#06b6d4" }}>{s.agent_name}</span>
-                    <span style={{ color: "#8ab4cc" }}>→</span>
-                    <span style={{ color: "#e2e8f0" }}>{s.projeto}</span>
-                    {!s.enabled && <span style={{ color: "#ef4444", fontSize: "0.68rem" }}>(disabled)</span>}
-                    <button onClick={() => removeSub(s.agent_name, s.projeto)} title="Remover"
-                      style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, border: "1px solid #ef444444", background: "transparent", color: "#ef4444", cursor: "pointer", padding: 0 }}>
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", borderTop: "1px solid #1a2840", paddingTop: "0.75rem" }}>
-              <CheckboxDropdown items={agents.map(a => a.name)} selected={newSubAgents} onChange={setNewSubAgents} placeholder="agentes" />
-              <span style={{ color: "#5a7a9a", fontFamily: "'Fira Code', monospace" }}>→</span>
-              <CheckboxDropdown items={repos} selected={newSubRepos} onChange={setNewSubRepos} placeholder="repos" />
-              <button onClick={addSub} disabled={subLoading || !newSubAgents.size || !newSubRepos.size}
-                style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.4rem 0.8rem", borderRadius: 5, border: "1px solid #06b6d444", background: "#06b6d411", color: (!newSubAgents.size || !newSubRepos.size) ? "#3a6a8a" : "#06b6d4", cursor: (subLoading || !newSubAgents.size || !newSubRepos.size) ? "default" : "pointer", fontFamily: "'Fira Code', monospace", fontSize: "0.8rem" }}>
-                <Plus size={13} />
-                {subLoading ? "..." : newSubAgents.size && newSubRepos.size ? `Adicionar (${newSubAgents.size * newSubRepos.size})` : "Adicionar"}
-              </button>
-              {subMsg && <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", color: subMsg.includes("erro") ? "#ef4444" : "#22c55e" }}>{subMsg}</span>}
-            </div>
-          </div>
+        {/* Quick-add subscriptions */}
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => setView("matrix")} style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.4rem 0.7rem", borderRadius: 5, border: "1px solid #1a2840", background: "transparent", color: "#5a7a9a", cursor: "pointer", fontFamily: "'Fira Code', monospace", fontSize: "0.75rem" }}>
+            <Table2 size={12} /> {subs.length} subs
+          </button>
+          <CheckboxDropdown items={agents.map(a => a.name)} selected={newSubAgents} onChange={setNewSubAgents} placeholder="agentes" />
+          <span style={{ color: "#5a7a9a", fontFamily: "'Fira Code', monospace" }}>→</span>
+          <CheckboxDropdown items={repos} selected={newSubRepos} onChange={setNewSubRepos} placeholder="repos" />
+          <button onClick={addSub} disabled={subLoading || !newSubAgents.size || !newSubRepos.size}
+            style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.4rem 0.8rem", borderRadius: 5, border: "1px solid #06b6d444", background: "#06b6d411", color: (!newSubAgents.size || !newSubRepos.size) ? "#3a6a8a" : "#06b6d4", cursor: (subLoading || !newSubAgents.size || !newSubRepos.size) ? "default" : "pointer", fontFamily: "'Fira Code', monospace", fontSize: "0.8rem" }}>
+            <Plus size={13} />
+            {subLoading ? "..." : newSubAgents.size && newSubRepos.size ? `Adicionar (${newSubAgents.size * newSubRepos.size})` : "Adicionar"}
+          </button>
+          {subMsg && <span style={{ fontFamily: "'Fira Code', monospace", fontSize: "0.75rem", color: subMsg.includes("erro") ? "#ef4444" : "#22c55e" }}>{subMsg}</span>}
         </div>
 
         {/* Filtros + Runs */}
