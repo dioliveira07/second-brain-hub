@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Database, Cpu, GitMerge, Bell, Circle, ChevronRight, AlertTriangle, GitBranch, CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
@@ -29,11 +29,35 @@ function TaskIcon({ status }: { status: TaskItem["status"] }) {
   return <Clock size={13} color="var(--muted-foreground)" />;
 }
 
+type Notif = { id: string; type: string; message: string; created_at: string; metadata?: Record<string, unknown> };
+
 export function DashboardLive({ initialStats, initialRepos, projetos_abandono = [], initialTaskNotifications = [] }: Props) {
   const [stats, setStats]                       = useState(initialStats);
   const [repos, setRepos]                       = useState(initialRepos);
   const [taskNotifs, setTaskNotifs]             = useState<TaskNotification[]>(initialTaskNotifications);
+  const [notifOpen, setNotifOpen]               = useState(false);
+  const [notifs, setNotifs]                     = useState<Notif[]>([]);
+  const [notifsLoading, setNotifsLoading]       = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadNotifs = useCallback(async () => {
+    setNotifsLoading(true);
+    try {
+      const res = await fetch("/painel/api/notif-proxy?unread_only=true&limit=50", { cache: "no-store" });
+      const data = await res.json();
+      if (Array.isArray(data)) setNotifs(data);
+    } catch {}
+    setNotifsLoading(false);
+  }, []);
+
+  const markAllRead = useCallback(async () => {
+    await Promise.all(notifs.map(n =>
+      fetch(`/painel/api/notif-proxy?id=${n.id}&action=read`, { method: "PATCH" })
+    ));
+    setNotifs([]);
+    setStats(s => ({ ...s, notifications_unread: 0 }));
+    setNotifOpen(false);
+  }, [notifs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,21 +137,56 @@ export function DashboardLive({ initialStats, initialRepos, projetos_abandono = 
     <>
       {/* Stats cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-        {CARDS.map(({ label, value, Icon, color, spot, border, sub }) => (
-          <SpotlightCard key={label} spotColor={spot} borderColor={border} style={{ padding: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
-              <span className="label" style={{ maxWidth: 130, lineHeight: 1.4 }}>{label}</span>
-              <div style={{ width: 32, height: 32, borderRadius: "var(--r)", display: "flex", alignItems: "center", justifyContent: "center", background: spot, border: `1px solid ${border}`, flexShrink: 0 }}>
-                <Icon size={15} color={color} />
+        {CARDS.map(({ label, value, Icon, color, spot, border, sub }) => {
+          const isNotif = label === "Notificações";
+          const card = (
+            <div key={label} onClick={isNotif ? () => { setNotifOpen(o => { if (!o) loadNotifs(); return !o; }); } : undefined} style={{ cursor: isNotif ? "pointer" : "default" }}>
+            <SpotlightCard spotColor={spot} borderColor={border} style={{ padding: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
+                <span className="label" style={{ maxWidth: 130, lineHeight: 1.4 }}>{label}</span>
+                <div style={{ width: 32, height: 32, borderRadius: "var(--r)", display: "flex", alignItems: "center", justifyContent: "center", background: spot, border: `1px solid ${border}`, flexShrink: 0 }}>
+                  <Icon size={15} color={color} />
+                </div>
               </div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "2.2rem", fontWeight: 700, color, lineHeight: 1, textShadow: color === "var(--cyan)" ? "var(--glow-cyan)" : color === "var(--green)" ? "var(--glow-green)" : color === "var(--purple)" ? "var(--glow-purple)" : "none", marginBottom: "0.5rem" }}>
+                <CountUp to={value} />
+              </div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>{isNotif ? (notifOpen ? "clique para fechar" : "clique para ver") : sub}</div>
+            </SpotlightCard>
             </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: "2.2rem", fontWeight: 700, color, lineHeight: 1, textShadow: color === "var(--cyan)" ? "var(--glow-cyan)" : color === "var(--green)" ? "var(--glow-green)" : color === "var(--purple)" ? "var(--glow-purple)" : "none", marginBottom: "0.5rem" }}>
-              <CountUp to={value} />
-            </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>{sub}</div>
-          </SpotlightCard>
-        ))}
+          );
+          return card;
+        })}
       </div>
+
+      {/* Painel de notificações */}
+      {notifOpen && (
+        <div style={{ background: "rgba(15,30,55,0.85)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 8, padding: "1rem 1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--amber, #fbbf24)", letterSpacing: "0.08em" }}>NOTIFICAÇÕES NÃO LIDAS</span>
+            {notifs.length > 0 && (
+              <button onClick={markAllRead} style={{ background: "none", border: "1px solid rgba(251,191,36,0.3)", color: "var(--amber, #fbbf24)", borderRadius: 4, padding: "2px 10px", fontFamily: "var(--mono)", fontSize: "0.62rem", cursor: "pointer" }}>
+                marcar todas como lidas
+              </button>
+            )}
+          </div>
+          {notifsLoading && <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>carregando...</div>}
+          {!notifsLoading && notifs.length === 0 && <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--muted-foreground)" }}>nenhuma notificação não lida</div>}
+          {notifs.map(n => (
+            <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", padding: "0.5rem 0.75rem", background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.12)", borderRadius: 6 }}>
+              <Bell size={12} color="var(--amber, #fbbf24)" style={{ marginTop: 2, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: "var(--text, #e2e8f0)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.message}</div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: "0.6rem", color: "var(--muted-foreground)", marginTop: 2 }}>{n.type} · {new Date(n.created_at).toLocaleDateString("pt-BR")}</div>
+              </div>
+              <button onClick={() => fetch(`/painel/api/notif-proxy?id=${n.id}&action=read`, { method: "PATCH" }).then(() => { setNotifs(prev => prev.filter(x => x.id !== n.id)); setStats(s => ({ ...s, notifications_unread: Math.max(0, s.notifications_unread - 1) })); })}
+                style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", flexShrink: 0, padding: "0 2px" }} title="marcar como lida">
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Repos list */}
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
