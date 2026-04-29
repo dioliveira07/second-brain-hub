@@ -79,6 +79,7 @@ function CheckboxDropdown({
     onChange(next);
   }
 
+  const sorted = [...items].sort((a, b) => a.localeCompare(b));
   const allChecked = items.length > 0 && selected.size === items.length;
 
   const label =
@@ -118,7 +119,7 @@ function CheckboxDropdown({
             />
             todos ({items.length})
           </label>
-          {items.map(item => (
+          {sorted.map(item => (
             <label key={item} style={{
               display: "flex", alignItems: "center", gap: "0.5rem",
               padding: "0.38rem 0.75rem", cursor: "pointer",
