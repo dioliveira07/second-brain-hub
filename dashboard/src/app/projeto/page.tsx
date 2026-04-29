@@ -128,8 +128,8 @@ function ProjetoTimelineContent() {
   const [repos, setRepos] = useState<{owner: string; name: string; full_name: string}[]>([]);
   useEffect(() => {
     if (slug) return;
-    fetch("/painel/api/cerebro-proxy?path=/../../v1/repos").then(r => r.json()).then(d => {
-      if (Array.isArray(d)) setRepos(d.map((r: {owner?: string; name?: string; full_name?: string}) => ({ owner: r.owner ?? "", name: r.name ?? "", full_name: r.full_name ?? "" })));
+    fetch("/painel/api/live-status", { cache: "no-store" }).then(r => r.json()).then(d => {
+      if (Array.isArray(d.repos)) setRepos(d.repos.map((r: {owner?: string; name?: string; full_name?: string}) => ({ owner: r.owner ?? "", name: r.name ?? "", full_name: r.full_name ?? "" })));
     }).catch(() => {});
   }, [slug]);
 
