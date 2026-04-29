@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import dynamic from "next/dynamic";
 import { X, ArrowRight } from "lucide-react";
 import type { CausalGraphData, CausalNode, CausalEdgeData } from "@/lib/hub";
 
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _FG2D: any = null;
 
 // ─── Paleta cyberpunk ────────────────────────────────────────────────────────
 
@@ -384,13 +384,13 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const reheatedRef   = useRef(false);
+  const [FG2D, setFG2D]   = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [size, setSize]   = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const containerRef      = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
-  // Resize observer (canvas ocupa todo o container disponível)
+  // ResizeObserver — atualiza dimensões quando container estiver pronto
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(entries => {
@@ -398,17 +398,22 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
         const sidebarOpen = !!selected;
         const w = e.contentRect.width - (sidebarOpen ? 320 : 0);
         const h = Math.max(420, e.contentRect.height);
-        setSize({ w, h });
-        // Primeira vez que temos dimensões reais: reaquece simulação para corrigir layout
-        if (!reheatedRef.current && w !== 800 && fgRef.current?.d3ReheatSimulation) {
-          reheatedRef.current = true;
-          setTimeout(() => fgRef.current?.d3ReheatSimulation(), 50);
-        }
+        if (w > 0) setSize({ w, h });
       }
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [selected]);
+
+  // Importa ForceGraph2D após dimensões reais estarem disponíveis
+  useEffect(() => {
+    if (size.w === 0) return;
+    if (_FG2D) { setFG2D(() => _FG2D); return; }
+    import("react-force-graph-2d").then(m => {
+      _FG2D = m.default;
+      setFG2D(() => _FG2D);
+    });
+  }, [size.w]);
 
   // Polling 60s — só atualiza state se IDs realmente mudaram (evita reset da física)
   useEffect(() => {
@@ -702,36 +707,36 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               </div>
             </div>
           </div>
-        ) : (
-          <ForceGraph2D
+        ) : FG2D ? (
+          <FG2D
             ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
             width={size.w}
             height={size.h}
             backgroundColor="rgba(2,6,23,0)"
             nodeRelSize={18}
-            nodeVal={(n) => {
+            nodeVal={(n: unknown) => {
               // val controla collide nativo: radius = nodeRelSize × ∛val
               // 18 × ∛6 ≈ 33 (decisão), 18 × ∛3 ≈ 26 (memória), 18 × ∛1 = 18 (signal)
               const node = n as GraphNode;
               return node.table === "architectural_decisions" ? 6 : node.table === "memories" ? 3 : 1;
             }}
-            linkColor={(l) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
-            linkWidth={(l) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
+            linkColor={(l: unknown) => `${RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}77`}
+            linkWidth={(l: unknown) => 1 + ((l as GraphLink).confidence || 0.5) * 1.2}
             linkDirectionalArrowLength={7}
             linkDirectionalArrowRelPos={0.92}
-            linkDirectionalArrowColor={(l) => RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}
-            linkDirectionalParticles={(l) => ((l as GraphLink).relation === "contradicts" ? 3 : 0)}
+            linkDirectionalArrowColor={(l: unknown) => RELATION_COLOR[(l as GraphLink).relation] || "#94a3b8"}
+            linkDirectionalParticles={(l: unknown) => ((l as GraphLink).relation === "contradicts" ? 3 : 0)}
             linkDirectionalParticleSpeed={0.008}
             linkDirectionalParticleColor={() => "#f87171"}
             linkDirectionalParticleWidth={2}
-            linkLineDash={(l) => {
+            linkLineDash={(l: unknown) => {
               const rel = (l as GraphLink).relation;
               return rel === "contradicts" ? [4, 4] : [6, 5];
             }}
             nodeCanvasObjectMode={() => "replace"}
-            nodeCanvasObject={(node, ctx, globalScale) => drawNode(node as GraphNode, ctx, globalScale)}
-            nodePointerAreaPaint={(node, color, ctx) => {
+            nodeCanvasObject={(node: unknown, ctx: CanvasRenderingContext2D, globalScale: number) => drawNode(node as GraphNode, ctx, globalScale)}
+            nodePointerAreaPaint={(node: unknown, color: string, ctx: CanvasRenderingContext2D) => {
               const n = node as GraphNode;
               const r = n.table === "architectural_decisions" ? 16 : n.table === "memories" ? 13 : 9;
               ctx.fillStyle = color;
@@ -739,14 +744,14 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               ctx.arc(n.x || 0, n.y || 0, r + 2, 0, 2 * Math.PI);
               ctx.fill();
             }}
-            onNodeClick={(node) => setSelected(node as CausalNode)}
+            onNodeClick={(node: unknown) => setSelected(node as CausalNode)}
             cooldownTicks={400}
             warmupTicks={50}
             d3VelocityDecay={0.4}
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
-        )}
+        ) : null}
       </div>
 
       {selected && (
