@@ -384,10 +384,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [size, setSize]       = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [fgReady, setFgReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fgRef = useRef<any>(null);
+  const fgRef        = useRef<any>(null);
+  const fgReadyRef   = useRef(false);
 
   // ── DIAGNÓSTICO: timestamps relativos ao mount ──────────────────────────────
   const mountT = useRef(Date.now());
@@ -521,11 +523,11 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     if (n) setSelected(n);
   }, [nodesById]);
 
-  // Configura forças anti-overlap quando ref disponível
+  // Configura forças — roda quando ForceGraph2D realmente montou (fgReady)
   useEffect(() => {
     const fg = fgRef.current;
-    lg("forces useEffect — fgRef=" + !!fg + " d3Force=" + (typeof fg?.d3Force));
-    if (!fg || typeof fg.d3Force !== "function") return;
+    lg("forces useEffect — fgReady=" + fgReady + " fgRef=" + !!fg + " d3Force=" + (typeof fg?.d3Force));
+    if (!fgReady || !fg || typeof fg.d3Force !== "function") return;
 
     let cancelled = false;
     (async () => {
@@ -567,7 +569,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
     })();
 
     return () => { cancelled = true; };
-  }, [graphData]);
+  }, [fgReady, graphData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { edgesIn, edgesOut } = useMemo(() => {
     if (!selected) return { edgesIn: [], edgesOut: [] };
@@ -716,7 +718,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               </div>
             </div>
           </div>
-        ) : (
+        ) : size.w > 0 ? (
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
@@ -754,18 +756,17 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               ctx.fill();
             }}
             onRenderFramePre={(ctx, globalScale) => {
-              if (!(window as any).__fgRenders) (window as any).__fgRenders = 0;
-              (window as any).__fgRenders++;
-              if ((window as any).__fgRenders === 1) {
+              if (!fgReadyRef.current) {
+                fgReadyRef.current = true;
                 const fg = fgRef.current;
-                lg("ForceGraph2D 1º RENDER", {
+                lg("ForceGraph2D 1º RENDER — disparando fgReady", {
                   size,
                   globalScale,
                   zoom: fg?.zoom?.(),
-                  alpha: fg?.d3Alpha?.(),
                   nodes: graphData.nodes.length,
                   containerPx: containerRef.current?.getBoundingClientRect(),
                 });
+                setFgReady(true);
               }
             }}
             onEngineStop={() => {
@@ -779,12 +780,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             }}
             onNodeClick={(node) => setSelected(node as CausalNode)}
             cooldownTicks={400}
-            warmupTicks={50}
+            warmupTicks={0}
             d3VelocityDecay={0.4}
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
-        )}
+        ) : null}
       </div>
 
       {selected && (
