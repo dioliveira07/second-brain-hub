@@ -194,13 +194,16 @@ export function SecurityClient({
               // Só tem dados reais se a máquina conectou APÓS o restart do hub
               const seenAfterRestart = new Date(c.last_seen_at) > new Date((log as any).hub_started_at);
               const ips = [c.client_ip, c.real_ip].filter(Boolean);
-              const hasUnauth = log.entries.some(e => ips.includes(e.ip) && !e.key_present);
-              const hasAuth   = log.entries.some(e => ips.includes(e.ip) && e.key_present);
+              const ipEntries = log.entries.filter((e: any) => ips.includes(e.ip));
+              // Última entry por IP determina o status atual
+              const lastEntry = ipEntries.length > 0 ? ipEntries[ipEntries.length - 1] : null;
+              const hasAuth   = ipEntries.some((e: any) => e.key_present);
+              const lastHasKey = lastEntry ? lastEntry.key_present : true;
 
               let statusEl;
               if (!seenAfterRestart) {
                 statusEl = <span style={{ color: C.dim }}>sem dados</span>;
-              } else if (hasUnauth) {
+              } else if (!lastHasKey && !hasAuth) {
                 statusEl = <span style={{ color: C.red }}>⚠ sem chave</span>;
               } else if (hasAuth) {
                 statusEl = <span style={{ color: C.green }}>✓ autenticada</span>;
