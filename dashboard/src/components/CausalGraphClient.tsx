@@ -384,7 +384,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   const [data, setData] = useState<CausalGraphData>(initial);
   const [filterRelation, setFilterRelation] = useState<string>("");
   const [selected, setSelected] = useState<CausalNode | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
@@ -392,13 +392,14 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
   // Resize observer (canvas ocupa todo o container disponível)
   useEffect(() => {
     if (!containerRef.current) return;
+    console.log("[FG] ResizeObserver useEffect mount, t=", Date.now());
     const ro = new ResizeObserver(entries => {
       for (const e of entries) {
         const sidebarOpen = !!selected;
-        setSize({
-          w: e.contentRect.width - (sidebarOpen ? 320 : 0),
-          h: Math.max(420, e.contentRect.height),
-        });
+        const w = e.contentRect.width - (sidebarOpen ? 320 : 0);
+        const h = Math.max(420, e.contentRect.height);
+        console.log("[FG] ResizeObserver fired w=", w, "h=", h, "t=", Date.now());
+        setSize({ w, h });
       }
     });
     ro.observe(containerRef.current);
@@ -697,7 +698,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               </div>
             </div>
           </div>
-        ) : (
+        ) : size.w > 0 ? (
           <ForceGraph2D
             ref={fgRef}
             graphData={graphData as { nodes: GraphNode[]; links: GraphLink[] }}
@@ -734,6 +735,12 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
               ctx.arc(n.x || 0, n.y || 0, r + 2, 0, 2 * Math.PI);
               ctx.fill();
             }}
+            onRenderFramePre={() => {
+              if (!(window as any).__fgLogged) {
+                (window as any).__fgLogged = true;
+                console.log("[FG] ForceGraph2D primeiro render, size=", size, "t=", Date.now());
+              }
+            }}
             onNodeClick={(node) => setSelected(node as CausalNode)}
             cooldownTicks={400}
             warmupTicks={50}
@@ -741,7 +748,7 @@ export function CausalGraphClient({ initial }: { initial: CausalGraphData }) {
             d3AlphaDecay={0.018}
             enableNodeDrag={true}
           />
-        )}
+        ) : null}
       </div>
 
       {selected && (
