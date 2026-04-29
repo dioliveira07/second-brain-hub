@@ -472,12 +472,12 @@ type SSHIdentityWithLocal = SSHIdentity & { _sessionsHere: SSHSession[] };
 
 const CMDS = {
   unix: {
-    bootstrap: "curl -s http://hub.fluxiom.com.br/api/cerebro/bootstrap | python3",
-    mcp:       "claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse",
+    bootstrap: "curl -sL https://hub.fluxiom.com.br/api/cerebro/bootstrap | python3",
+    mcp:       "claude mcp add --transport sse second-brain-hub https://hub.fluxiom.com.br/sse",
   },
   win: {
-    bootstrap: "python -c \"import urllib.request; exec(urllib.request.urlopen('http://hub.fluxiom.com.br/api/cerebro/bootstrap').read().decode())\"",
-    mcp:       "claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse",
+    bootstrap: "python -c \"import urllib.request; exec(urllib.request.urlopen('https://hub.fluxiom.com.br/api/cerebro/bootstrap').read().decode())\"",
+    mcp:       "claude mcp add --transport sse second-brain-hub https://hub.fluxiom.com.br/sse",
   },
 };
 
