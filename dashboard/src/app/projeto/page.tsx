@@ -129,7 +129,7 @@ function ProjetoTimelineContent() {
   useEffect(() => {
     if (slug) return;
     fetch("/painel/api/live-status", { cache: "no-store" }).then(r => r.json()).then(d => {
-      if (Array.isArray(d.repos)) setRepos(d.repos.map((r: {owner?: string; name?: string; full_name?: string}) => ({ owner: r.owner ?? "", name: r.name ?? "", full_name: r.full_name ?? "" })));
+      if (Array.isArray(d.repos)) setRepos(d.repos.map((r: {repo?: string; full_name?: string}) => { const slug = r.repo ?? r.full_name ?? ""; return { owner: slug.split("/")[0] ?? "", name: slug.split("/")[1] ?? slug, full_name: slug }; }));
     }).catch(() => {});
   }, [slug]);
 
