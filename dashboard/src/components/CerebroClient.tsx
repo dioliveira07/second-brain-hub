@@ -1336,7 +1336,8 @@ export function CerebroClient({
               <div style={{ textAlign: "center", padding: "3rem", color: C.dim, fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
                 Nenhum cliente MCP conectado nas últimas 24h.<br />
                 <span style={{ fontSize: "0.72rem", opacity: 0.6 }}>
-                  Bootstrap: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br:8020/sse</code>
+                  Bootstrap: <code>python3 -c &quot;import urllib.request; exec(urllib.request.urlopen(&apos;http://hub.fluxiom.com.br/api/cerebro/bootstrap&apos;).read().decode())&quot;</code><br />
+                  MCP: <code>claude mcp add --transport sse second-brain-hub http://hub.fluxiom.com.br/sse</code>
                 </span>
               </div>
             ) : (
