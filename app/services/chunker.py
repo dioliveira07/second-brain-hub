@@ -22,7 +22,8 @@ class Chunk:
     char_end: int
 
 
-OVERLAP_CHARS = 800  # ~200 tokens
+OVERLAP_CHARS = 150   # ~37 tokens — contexto mínimo entre chunks
+MIN_SECTION_CHARS = 80  # seções menores que isso são mescladas com a próxima
 
 
 def _make_metadata(
@@ -68,14 +69,11 @@ def _infer_role(file_path: str) -> str:
 
 
 def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
-    """Split por seções h1/h2/h3. Cada seção = 1 chunk, com overlap do final da seção anterior."""
+    """Split por seções h1/h2/h3. Seções pequenas são mescladas com a próxima."""
     role = _infer_role(file_path)
-    # Split at any heading h1-h3
-    heading_pattern = re.compile(r"^(#{1,3} .+)$", re.MULTILINE)
-    splits = list(heading_pattern.finditer(content))
 
-    if not splits:
-        # No headings — single chunk
+    # Arquivos pequenos (<= 3000 chars): chunk único — evita explosão de tiny chunks em skills
+    if len(content) <= 3000:
         return [
             Chunk(
                 content=content,
@@ -85,32 +83,54 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
             )
         ]
 
-    chunks: list[Chunk] = []
-    # Content before first heading (preamble)
+    # Split at any heading h1-h3
+    heading_pattern = re.compile(r"^(#{1,3} .+)$", re.MULTILINE)
+    splits = list(heading_pattern.finditer(content))
+
+    if not splits:
+        return [
+            Chunk(
+                content=content,
+                metadata=_make_metadata(file_path, "markdown", "markdown", role, 0),
+                char_start=0,
+                char_end=len(content),
+            )
+        ]
+
+    # Collect raw sections
+    raw_sections: list[tuple[int, int, str]] = []  # (start, end, text)
     if splits[0].start() > 0:
         preamble = content[: splits[0].start()].strip()
         if preamble:
-            chunks.append(
-                Chunk(
-                    content=preamble,
-                    metadata=_make_metadata(file_path, "markdown", "markdown", role, 0),
-                    char_start=0,
-                    char_end=splits[0].start(),
-                )
-            )
+            raw_sections.append((0, splits[0].start(), preamble))
 
     for i, match in enumerate(splits):
         start = match.start()
         end = splits[i + 1].start() if i + 1 < len(splits) else len(content)
-        section_text = content[start:end].strip()
+        raw_sections.append((start, end, content[start:end].strip()))
 
-        # Add overlap from end of previous chunk
-        if chunks and len(chunks[-1].content) > 0:
+    # Merge small sections with the next one
+    merged: list[tuple[int, int, str]] = []
+    i = 0
+    while i < len(raw_sections):
+        start, end, text = raw_sections[i]
+        # Accumulate small consecutive sections
+        while len(text) < MIN_SECTION_CHARS and i + 1 < len(raw_sections):
+            i += 1
+            next_start, next_end, next_text = raw_sections[i]
+            text = text + "\n\n" + next_text
+            end = next_end
+        merged.append((start, end, text))
+        i += 1
+
+    # Build chunks with overlap
+    chunks: list[Chunk] = []
+    for idx, (start, end, section_text) in enumerate(merged):
+        if chunks:
             overlap = chunks[-1].content[-OVERLAP_CHARS:]
             if overlap and not section_text.startswith(overlap):
                 section_text = overlap + "\n\n" + section_text
 
-        idx = len(chunks)
         chunks.append(
             Chunk(
                 content=section_text,
@@ -120,7 +140,6 @@ def chunk_markdown(content: str, file_path: str) -> list[Chunk]:
             )
         )
 
-    # Update chunk_index in metadata
     for i, c in enumerate(chunks):
         c.metadata["chunk_index"] = i
 

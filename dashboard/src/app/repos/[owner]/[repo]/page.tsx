@@ -1,9 +1,11 @@
 import { hubFetch } from "@/lib/hub";
 import { FadeIn }   from "@/components/reactbits/FadeIn";
 import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
+import { FileTree, type TreeNode } from "@/components/FileTree";
+import { MarkdownSummary } from "@/components/MarkdownSummary";
 import {
   GitBranch, Clock, Layers, Code2, Server,
-  GitMerge, AlertTriangle, User, Calendar, CheckCircle2,
+  GitMerge, AlertTriangle, User, Calendar, CheckCircle2, FolderTree,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -11,6 +13,7 @@ type RepoDetail = {
   repo:           string;
   summary:        string;
   detected_stack: { languages: string[]; frameworks: string[]; infra: string[] };
+  directory_map:  TreeNode | null;
   last_indexed_at: string;
   status:         string;
 };
@@ -91,9 +94,33 @@ export default async function RepoDetailPage({ params }: PageParams) {
               </div>
             )}
           </div>
-          <span className={`badge badge-${isDone ? "done" : "pending"}`} style={{ alignSelf: "flex-start" }}>
-            {detail.status}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", alignSelf: "flex-start" }}>
+            <span className={`badge badge-${isDone ? "done" : "pending"}`}>
+              {detail.status}
+            </span>
+            {detail.directory_map && (
+              <Link
+                href={`/repos/${owner}/${repo}/explore`}
+                style={{
+                  display:      "flex",
+                  alignItems:   "center",
+                  gap:          "5px",
+                  fontFamily:   "var(--mono)",
+                  fontSize:     "0.72rem",
+                  color:        "var(--cyan)",
+                  background:   "rgba(6,182,212,0.07)",
+                  border:       "1px solid rgba(6,182,212,0.25)",
+                  borderRadius: "var(--r)",
+                  padding:      "4px 10px",
+                  textDecoration: "none",
+                  transition:   "background 0.15s",
+                }}
+              >
+                <FolderTree size={11} />
+                Explorar
+              </Link>
+            )}
+          </div>
         </div>
       </FadeIn>
 
@@ -148,22 +175,24 @@ export default async function RepoDetailPage({ params }: PageParams) {
             <GitBranch size={13} color="var(--cyan)" />
             <span className="label-accent">Resumo Arquitetural</span>
           </div>
-          <pre
-            style={{
-              fontFamily:   "var(--mono)",
-              fontSize:     "0.78rem",
-              lineHeight:   1.75,
-              color:        "var(--text)",
-              whiteSpace:   "pre-wrap",
-              wordBreak:    "break-word",
-              margin:       0,
-              opacity:      0.88,
-            }}
-          >
-            {detail.summary || "Sem resumo disponível."}
-          </pre>
+          <MarkdownSummary content={detail.summary || "Sem resumo disponível."} />
         </div>
       </FadeIn>
+
+      {/* Árvore de arquivos */}
+      {detail.directory_map && (
+        <FadeIn delay={150}>
+          <div className="panel" style={{ padding: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem" }}>
+              <FolderTree size={13} color="var(--amber, #fbbf24)" />
+              <span className="label-accent" style={{ color: "var(--amber, #fbbf24)" }}>
+                Estrutura de Arquivos
+              </span>
+            </div>
+            <FileTree root={detail.directory_map} />
+          </div>
+        </FadeIn>
+      )}
 
       {/* Decisões arquiteturais */}
       <FadeIn delay={180}>

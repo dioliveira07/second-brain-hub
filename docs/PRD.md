@@ -4,7 +4,7 @@
 
 Sistema multiusuário centralizado que indexa, retém e disponibiliza o conhecimento técnico da empresa a partir dos repositórios GitHub, acessível por qualquer desenvolvedor via Claude Code em seus terminais.
 
-**O Hub não utiliza API da Anthropic/Claude.** Toda inteligência (resumos, interpretação, geração de código) acontece no Claude Code do dev, na ponta. O Hub é exclusivamente um banco de contexto: armazena dados brutos estruturados e os serve via API REST.
+**O Hub não consome a API paga da Anthropic.** Para geração de resumos e síntese, utiliza o binário `claude` instalado na VPS (conta local), via subprocess. Toda inteligência adicional acontece no Claude Code do dev, na ponta. O Hub é primariamente um banco de contexto: armazena dados brutos estruturados e os serve via API REST.
 
 ## Arquitetura Macro
 

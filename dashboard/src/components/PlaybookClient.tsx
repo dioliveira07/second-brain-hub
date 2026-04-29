@@ -1,6 +1,6 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
-import { Search, Loader2, Code, FileCode, Percent } from "lucide-react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Search, Loader2, FileCode, Sparkles, List, Filter } from "lucide-react";
 
 // Pretext: mede linhas de snippet sem DOM reflow
 // Usado para truncar snippets a exatamente MAX_LINES antes de renderizar
@@ -223,84 +223,204 @@ function ResultCard({ r }: { r: SearchResult }) {
   );
 }
 
-export function PlaybookClient() {
-  const [query,   setQuery]   = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+type Mode = "search" | "ask";
 
-  const search = useCallback(async () => {
+export function PlaybookClient() {
+  const [query,       setQuery]       = useState("");
+  const [mode,        setMode]        = useState<Mode>("search");
+  const [results,     setResults]     = useState<SearchResult[]>([]);
+  const [answer,      setAnswer]      = useState<string | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [searched,    setSearched]    = useState(false);
+  const [allRepos,    setAllRepos]    = useState<string[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string>("");
+
+  // Carrega lista de repos indexados
+  useEffect(() => {
+    fetch("/painel/api/live-status")
+      .then(r => r.json())
+      .then(d => {
+        const names = (d.repos || [])
+          .filter((r: { status: string }) => r.status === "done")
+          .map((r: { repo: string }) => r.repo)
+          .sort();
+        setAllRepos(names);
+      })
+      .catch(() => {});
+  }, []);
+
+  const run = useCallback(async (currentMode: Mode) => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
+    setAnswer(null);
+    setResults([]);
     try {
+      const body: Record<string, unknown> = {
+        query,
+        limit: currentMode === "ask" ? 15 : 20,
+        synthesize: currentMode === "ask",
+      };
+      if (selectedRepo) body.repos = [selectedRepo];
       const res  = await fetch("/painel/api/search", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ query, limit: 20 }),
+        body:    JSON.stringify(body),
       });
       const data = await res.json();
       setResults(data.results || []);
+      setAnswer(data.answer || null);
     } catch {
       setResults([]);
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, selectedRepo]);
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") run(mode);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+      {/* Mode tabs */}
+      <div style={{ display: 'flex', gap: '4px' }}>
+        {(["search", "ask"] as Mode[]).map((m) => {
+          const active = mode === m;
+          return (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                fontFamily: 'var(--mono)', fontSize: '0.72rem', fontWeight: 600,
+                letterSpacing: '0.1em', textTransform: 'uppercase',
+                padding: '5px 12px', borderRadius: '5px', border: 'none',
+                cursor: 'pointer',
+                background: active ? 'rgba(6,182,212,0.12)' : 'transparent',
+                color: active ? 'var(--cyan)' : 'var(--muted-foreground)',
+                transition: 'all 150ms',
+              }}
+            >
+              {m === "search" ? <List size={12} /> : <Sparkles size={12} />}
+              {m === "search" ? "Buscar" : "Perguntar"}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Repo filter */}
+      {allRepos.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Filter size={12} color="var(--muted-foreground)" />
+          <select
+            value={selectedRepo}
+            onChange={e => setSelectedRepo(e.target.value)}
+            style={{
+              background: 'var(--bg-panel)',
+              border: '1px solid var(--border)',
+              borderRadius: '5px',
+              color: selectedRepo ? 'var(--text)' : 'var(--muted-foreground)',
+              fontFamily: 'var(--mono)',
+              fontSize: '0.75rem',
+              padding: '4px 10px',
+              cursor: 'pointer',
+              maxWidth: 280,
+            }}
+          >
+            <option value="">todos os repositórios</option>
+            {allRepos.map(r => (
+              <option key={r} value={r}>{r.replace('dioliveira07/', '')}</option>
+            ))}
+          </select>
+          {selectedRepo && (
+            <button
+              onClick={() => setSelectedRepo("")}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', fontFamily: 'var(--mono)', fontSize: '0.72rem' }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Search bar */}
       <div
         className="panel"
         style={{ padding: '1.25rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}
       >
         <div style={{ flex: 1, position: 'relative' }}>
-          <Search
-            size={14}
-            style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }}
-          />
+          {mode === "ask"
+            ? <Sparkles size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--purple)' }} />
+            : <Search    size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }} />
+          }
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="O que você quer aprender? (ex: como funciona a autenticação)"
+            onKeyDown={handleKey}
+            placeholder={mode === "ask"
+              ? "Faça uma pergunta sobre o código (ex: como funciona a autenticação?)"
+              : "O que você quer encontrar? (ex: autenticação, webhook handler)"
+            }
             className="cyber-input"
             style={{ paddingLeft: '2.25rem' }}
           />
         </div>
         <button
-          onClick={search}
+          onClick={() => run(mode)}
           disabled={loading || !query.trim()}
           className="cyber-btn"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
+            background: mode === "ask" ? 'var(--purple)' : 'var(--green)',
+          }}
         >
           {loading
             ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
-            : <Search size={13} />
+            : mode === "ask" ? <Sparkles size={13} /> : <Search size={13} />
           }
-          {loading ? "Buscando" : "Buscar"}
+          {loading ? (mode === "ask" ? "Perguntando..." : "Buscando") : (mode === "ask" ? "Perguntar" : "Buscar")}
         </button>
       </div>
 
-      {/* Results */}
+      {/* Loading */}
       {loading && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-            <Loader2 size={24} color="var(--cyan)" style={{ animation: 'spin 1s linear infinite' }} />
+            <Loader2 size={24} color={mode === "ask" ? 'var(--purple)' : 'var(--cyan)'} style={{ animation: 'spin 1s linear infinite' }} />
             <span style={{ fontFamily: 'var(--mono)', fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
-              Consultando vetor semântico...
+              {mode === "ask" ? "Consultando o cérebro..." : "Consultando vetor semântico..."}
             </span>
           </div>
         </div>
       )}
 
+      {/* Synthesized answer */}
+      {!loading && answer && (
+        <div
+          className="panel"
+          style={{ padding: '1.25rem', borderColor: 'rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.04)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.75rem' }}>
+            <Sparkles size={13} color="var(--purple)" />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--purple)' }}>
+              Resposta
+            </span>
+          </div>
+          <p style={{ fontFamily: 'var(--sans)', fontSize: '0.85rem', color: 'var(--text)', lineHeight: 1.65, whiteSpace: 'pre-wrap', margin: 0 }}>
+            {answer}
+          </p>
+        </div>
+      )}
+
+      {/* Results */}
       {!loading && results.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span className="label-accent" style={{ fontSize: '0.75rem' }}>
-              Resultados
+              {answer ? "Fontes" : "Resultados"}
             </span>
             <span style={{ fontFamily: 'var(--mono)', fontSize: "0.72rem", color: 'var(--muted-foreground)' }}>
               {results.length} encontrados

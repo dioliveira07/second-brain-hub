@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, GitBranch, Clock, Layers, Box, ExternalLink } from "lucide-react";
+import { X, GitBranch, Clock, Layers, Box, ExternalLink, ArrowRight } from "lucide-react";
 
 // ─── API types ────────────────────────────────────────────────────────────────
 
@@ -30,52 +30,52 @@ export interface APIGraphEdge {
 }
 
 interface SelectedNode {
-  nodeType: "repo" | "technology" | "developer";
+  nodeType:      "repo" | "technology" | "developer";
   originalLabel: string;
-  status?: string;
+  status?:       string;
   last_indexed_at?: string | null;
   stack?: { languages?: string[]; frameworks?: string[]; infra?: string[] };
-  summary?: string;
-  repo_count?: number;
-  comboId?: string;
+  summary?:   string;
+  repo_count?:number;
+  comboId?:   string;
+  uses?:   string[];   // techs que o repo usa
+  usedBy?: string[];   // repos que usam esta tech
 }
 
 // ─── Paleta cyberpunk ─────────────────────────────────────────────────────────
 
-const CATEGORY_COLOR: Record<string, string> = {
-  "combo:frontend": "#06b6d4",   // cyan
-  "combo:backend":  "#a78bfa",   // purple
-  "combo:data":     "#fbbf24",   // amber
-  "combo:infra":    "#f87171",   // red
-  "combo:tooling":  "#34d399",   // emerald
+const CATS: Record<string, { color: string; label: string }> = {
+  frontend: { color: "#06b6d4", label: "Frontend"       },
+  fullstack:{ color: "#a78bfa", label: "Full-stack"     },
+  backend:  { color: "#f87171", label: "Backend"        },
+  data:     { color: "#fbbf24", label: "Data / Storage" },
+  infra:    { color: "#fb923c", label: "Infra / Ops"    },
+  tooling:  { color: "#34d399", label: "Tooling"        },
+  tech:     { color: "#22c55e", label: "Tecnologia"     },
 };
 
-const CATEGORY_LABEL: Record<string, string> = {
-  "combo:frontend": "Frontend & Web",
-  "combo:backend":  "Backend & APIs",
-  "combo:data":     "Data & Storage",
-  "combo:infra":    "Infrastructure",
-  "combo:tooling":  "Tooling & Testing",
-};
+// Legacy aliases usados no transformData / sidebar
+const CATEGORY_COLOR: Record<string, string> = Object.fromEntries(
+  Object.entries(CATS).map(([k, v]) => [k, v.color])
+);
 
 const TECH_COMBO_MAP: Record<string, string> = {
-  React: "combo:frontend", "Vue.js": "combo:frontend", Angular: "combo:frontend",
-  "Next.js": "combo:frontend", Vite: "combo:frontend", "Tailwind CSS": "combo:frontend",
-  HTML: "combo:frontend", CSS: "combo:frontend", Gatsby: "combo:frontend",
-  Svelte: "combo:frontend", Astro: "combo:frontend",
-  Python: "combo:backend", "Node.js": "combo:backend", TypeScript: "combo:backend",
-  JavaScript: "combo:backend", FastAPI: "combo:backend", Express: "combo:backend",
-  Django: "combo:backend", Flask: "combo:backend", Go: "combo:backend",
-  Java: "combo:backend", "Anthropic/Claude": "combo:backend",
-  HTTPX: "combo:backend", Celery: "combo:backend",
-  PostgreSQL: "combo:data", "PostgreSQL (asyncpg)": "combo:data", MySQL: "combo:data",
-  MongoDB: "combo:data", Redis: "combo:data", Qdrant: "combo:data",
-  Supabase: "combo:data", SQLAlchemy: "combo:data", Alembic: "combo:data",
-  Prisma: "combo:data", Drizzle: "combo:data",
-  Docker: "combo:infra", "Docker Compose": "combo:infra",
-  Kubernetes: "combo:infra", Nginx: "combo:infra", AWS: "combo:infra", GCP: "combo:infra",
-  Vitest: "combo:tooling", Jest: "combo:tooling", pytest: "combo:tooling",
-  Zod: "combo:tooling", Pydantic: "combo:tooling", ESLint: "combo:tooling",
+  React: "frontend", "Vue.js": "frontend", Angular: "frontend",
+  "Next.js": "frontend", Vite: "frontend", "Tailwind CSS": "frontend",
+  HTML: "frontend", CSS: "frontend", Svelte: "frontend", Astro: "frontend",
+  Python: "fullstack", "Node.js": "fullstack", TypeScript: "fullstack",
+  JavaScript: "fullstack", FastAPI: "backend", Express: "backend",
+  Django: "backend", Flask: "backend", Go: "backend", Java: "backend",
+  "Anthropic/Claude": "tooling", HTTPX: "backend", Celery: "backend",
+  Fastify: "backend",
+  PostgreSQL: "data", "PostgreSQL (asyncpg)": "data", MySQL: "data",
+  MongoDB: "data", Redis: "data", Qdrant: "data", Supabase: "data",
+  SQLAlchemy: "data", Alembic: "data", Prisma: "data", Drizzle: "data",
+  Docker: "infra", "Docker Compose": "infra",
+  Kubernetes: "infra", Nginx: "infra", AWS: "infra", GCP: "infra",
+  Vitest: "tooling", Jest: "tooling", pytest: "tooling",
+  Zod: "tooling", Pydantic: "tooling", ESLint: "tooling",
+  Laravel: "fullstack", PHP: "fullstack", Requests: "backend",
 };
 
 const TECH_ICONS: Record<string, string> = {
@@ -89,17 +89,24 @@ const TECH_ICONS: Record<string, string> = {
 };
 
 function getComboId(node: APIGraphNode): string {
-  if (node.type !== "repo") return TECH_COMBO_MAP[node.label] ?? "combo:backend";
+  if (node.type === "technology") return TECH_COMBO_MAP[node.label] ?? "tech";
+  if (node.type !== "repo") return "tooling";
   const s = node.data.stack;
-  if (!s) return "combo:backend";
+  if (!s) return "fullstack";
   const all = [...(s.frameworks ?? []), ...(s.languages ?? []), ...(s.infra ?? [])];
   const score = (keys: string[]) => all.filter((t) => keys.includes(t)).length;
-  const fe    = score(["React","Vue.js","Angular","Next.js","Vite","Tailwind CSS","HTML","CSS"]);
-  const infra = score(["Docker","Docker Compose","Kubernetes","Nginx","AWS"]);
-  const be    = score(["Python","FastAPI","Django","Flask","Express","Go","Java","Celery"]);
-  if (fe > be && fe > infra) return "combo:frontend";
-  if (infra > be && infra >= fe) return "combo:infra";
-  return "combo:backend";
+  const fe   = score(["React","Vue.js","Angular","Next.js","Vite","Tailwind CSS","HTML","CSS","Svelte"]);
+  const inf  = score(["Docker","Docker Compose","Kubernetes","Nginx","AWS","GCP"]);
+  const be   = score(["Python","FastAPI","Django","Flask","Express","Go","Java","Celery"]);
+  const data = score(["PostgreSQL","MySQL","MongoDB","Redis","Qdrant","Supabase","SQLAlchemy"]);
+  const tool = score(["Vitest","Jest","pytest","ESLint","Zod","Pydantic"]);
+  const max  = Math.max(fe, inf, be, data, tool);
+  if (max === 0) return "fullstack";
+  if (max === fe)   return fe > be ? "frontend" : "fullstack";
+  if (max === inf)  return "infra";
+  if (max === data) return "data";
+  if (max === tool) return "tooling";
+  return "backend";
 }
 
 // ─── Transform API → G6 ──────────────────────────────────────────────────────
@@ -107,7 +114,7 @@ function getComboId(node: APIGraphNode): string {
 function transformData(apiNodes: APIGraphNode[], apiEdges: APIGraphEdge[]): any {
   const nodes = apiNodes.map((n) => {
     const comboId  = getComboId(n);
-    const color    = CATEGORY_COLOR[comboId] ?? "#06b6d4";
+    const color    = CATS[comboId]?.color ?? "#06b6d4";
     const isRepo   = n.type === "repo";
     const name     = n.label.includes("/") ? n.label.split("/")[1] : n.label;
     const icon     = isRepo
@@ -159,8 +166,8 @@ function transformData(apiNodes: APIGraphNode[], apiEdges: APIGraphEdge[]): any 
 
   const edges = apiEdges.map((e, i) => {
     const sourceNode = apiNodes.find(n => n.id === e.source);
-    const comboId    = sourceNode ? getComboId(sourceNode) : "combo:backend";
-    const color      = CATEGORY_COLOR[comboId] ?? "#06b6d4";
+    const comboId    = sourceNode ? getComboId(sourceNode) : "fullstack";
+    const color      = CATS[comboId]?.color ?? "#06b6d4";
 
     return {
       id:     `edge-${i}`,
@@ -186,9 +193,9 @@ function transformData(apiNodes: APIGraphNode[], apiEdges: APIGraphEdge[]): any 
 
 function NodeSidebar({ node, onClose }: { node: SelectedNode; onClose: () => void }) {
   const isRepo   = node.nodeType === "repo";
-  const comboId  = node.comboId ?? "combo:backend";
-  const accent   = CATEGORY_COLOR[comboId] ?? "#06b6d4";
-  const category = CATEGORY_LABEL[comboId] ?? "";
+  const comboId  = node.comboId ?? "fullstack";
+  const accent   = CATS[comboId]?.color ?? "#06b6d4";
+  const category = CATS[comboId]?.label ?? "";
 
   const lastIndex = node.last_indexed_at
     ? new Date(node.last_indexed_at).toLocaleDateString("pt-BR", {
@@ -283,13 +290,46 @@ function NodeSidebar({ node, onClose }: { node: SelectedNode; onClose: () => voi
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
               {allTech.map((t) => {
-                const tColor = CATEGORY_COLOR[TECH_COMBO_MAP[t] ?? "combo:backend"] ?? "#64748b";
+                const tc = CATS[TECH_COMBO_MAP[t] ?? "tech"]?.color ?? "#64748b";
                 return (
-                  <span key={t} style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: tColor, background: `${tColor}14`, border: `1px solid ${tColor}33`, borderRadius: 4, padding: "2px 7px" }}>
-                    {t}
-                  </span>
+                  <span key={t} style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: tc, background: `${tc}14`, border: `1px solid ${tc}33`, borderRadius: 4, padding: "2px 7px" }}>{t}</span>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Depende de (repo → techs) */}
+        {node.uses && node.uses.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+              <ArrowRight size={11} color="var(--cyan)" />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                depende de ({node.uses.length})
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+              {node.uses.map((t) => {
+                const tc = CATS[TECH_COMBO_MAP[t] ?? "tech"]?.color ?? "#64748b";
+                return <span key={t} style={{ fontFamily: "var(--mono)", fontSize: "0.7rem", color: tc, background: `${tc}14`, border: `1px solid ${tc}28`, borderRadius: 3, padding: "1px 6px" }}>{t}</span>;
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Usado por (tech → repos) */}
+        {node.usedBy && node.usedBy.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
+              <GitBranch size={11} color="#a78bfa" />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                usado por ({node.usedBy.length})
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              {node.usedBy.map((r) => (
+                <div key={r} style={{ fontFamily: "var(--mono)", fontSize: "0.75rem", color: "var(--muted-foreground)", padding: "2px 8px", background: "var(--bg-panel)", borderRadius: 4 }}>{r}</div>
+              ))}
             </div>
           </div>
         )}
@@ -299,7 +339,7 @@ function NodeSidebar({ node, onClose }: { node: SelectedNode; onClose: () => voi
           <div>
             <div style={{ fontFamily: "var(--mono)", fontSize: "0.72rem", color: "var(--dim)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "0.4rem" }}>Resumo</div>
             <p style={{ fontFamily: "var(--sans)", fontSize: "0.78rem", color: "var(--muted-foreground)", lineHeight: 1.6, margin: 0 }}>
-              {node.summary.slice(0, 300)}{node.summary.length > 300 ? "…" : ""}
+              {node.summary.slice(0, 280)}{node.summary.length > 280 ? "…" : ""}
             </p>
           </div>
         )}
@@ -449,9 +489,32 @@ export function GraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges: AP
           const e      = evt as any;
           const nodeId = e?.target?.id ?? e?.itemId;
           if (!nodeId) return;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const nd = (graph as any).getNodeData?.(nodeId);
-          if (nd?.data) setSelectedNode(nd.data as SelectedNode);
+          const node = nodes.find((n) => n.id === nodeId);
+          if (!node) return;
+          const isRepo = node.type === "repo";
+          const uses   = isRepo
+            ? edges.filter((ed) => ed.source === nodeId && ed.type === "uses_technology")
+                   .map((ed) => nodes.find((n) => n.id === ed.target)?.label ?? ed.target)
+            : [];
+          const usedBy = !isRepo
+            ? edges.filter((ed) => ed.target === nodeId)
+                   .map((ed) => {
+                     const src = nodes.find((n) => n.id === ed.source);
+                     return src?.label.includes("/") ? src.label.split("/")[1] : (src?.label ?? ed.source);
+                   })
+            : [];
+          setSelectedNode({
+            nodeType:       node.type,
+            originalLabel:  node.label,
+            status:         node.data.status,
+            last_indexed_at:node.data.last_indexed_at,
+            stack:          node.data.stack,
+            summary:        node.data.summary,
+            repo_count:     node.data.repo_count,
+            comboId:        getComboId(node),
+            uses,
+            usedBy,
+          });
         });
 
         graph.on("canvas:click", () => setSelectedNode(null));
@@ -479,10 +542,7 @@ export function GraphClient({ nodes, edges }: { nodes: APIGraphNode[]; edges: AP
     };
   }, [nodes, edges]);
 
-  const LEGEND = Object.entries(CATEGORY_LABEL).map(([id, label]) => ({
-    label,
-    color: CATEGORY_COLOR[id],
-  }));
+  const LEGEND = Object.entries(CATS).map(([, { label, color }]) => ({ label, color }));
 
   return (
     <div

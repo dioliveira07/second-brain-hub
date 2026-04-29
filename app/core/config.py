@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 
 
 class Settings(BaseSettings):
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_host: str = "qdrant"
     qdrant_port: int = 6333
+    qdrant_api_key: str = ""
 
     # Redis
     redis_url: str = "redis://redis:6379/0"
@@ -30,8 +32,25 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 384
 
     hub_base_url: str = "http://localhost:8010"
+    admin_token: str = ""  # X-Admin-Token para endpoints administrativos
+    hub_api_key: str = ""  # X-Hub-Key — obrigatório para requests externos
+    hub_auth_audit: bool = True  # True=loga sem bloquear, False=enforce
+    hub_signing_key_path: str = "/root/.hub-signing-key"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        if self.hub_env == "production":
+            if self.secret_key == "change-me-in-production":
+                raise ValueError("SECRET_KEY deve ser configurado em produção (openssl rand -hex 32)")
+            if len(self.secret_key) < 32:
+                raise ValueError("SECRET_KEY deve ter pelo menos 32 caracteres")
+            if not self.hub_api_key:
+                raise ValueError("HUB_API_KEY obrigatório em produção")
+            if not self.admin_token:
+                raise ValueError("ADMIN_TOKEN obrigatório em produção")
+        return self
 
 
 settings = Settings()

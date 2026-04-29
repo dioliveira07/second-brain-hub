@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.models import IndexedRepo, ArchitecturalDecision
-from app.services import github_client, embeddings
+from app.services import github_client, embeddings, event_bus
 from app.services.qdrant import client as qdrant_client
 from qdrant_client.models import PointStruct
 
@@ -48,11 +48,25 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
 ```
 """
 
-    # 3. Embed e insere no Qdrant
-    vectors = embeddings.embed_texts([raw_document])
-    point_id = str(uuid.uuid4())
-
     merged_at_iso = merged_at or datetime.now(timezone.utc).isoformat()
+
+    # 4. Persiste no PostgreSQL (dedup: skip if already exists)
+    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
+    indexed_repo = result.scalar_one_or_none()
+
+    if indexed_repo:
+        existing = await db.execute(
+            select(ArchitecturalDecision).where(
+                ArchitecturalDecision.repo_id == indexed_repo.id,
+                ArchitecturalDecision.pr_number == pr_number,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return {"pr_number": pr_number, "repo": full_name, "skipped": True}
+
+    # 3. Embed e insere no Qdrant (ID determinístico para evitar duplicatas)
+    vectors = embeddings.embed_texts([raw_document])
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{full_name}#{pr_number}"))
 
     vector = vectors[0]
     if not isinstance(vector, list):
@@ -76,10 +90,6 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
         )]
     )
 
-    # 4. Persiste no PostgreSQL
-    result = await db.execute(select(IndexedRepo).where(IndexedRepo.github_full_name == full_name))
-    indexed_repo = result.scalar_one_or_none()
-
     if indexed_repo:
         decision = ArchitecturalDecision(
             repo_id=indexed_repo.id,
@@ -93,6 +103,26 @@ async def process_pr(full_name: str, pr_number: int, merged_at: str | None, db: 
             merged_at=datetime.fromisoformat(merged_at_iso.replace("Z", "+00:00")) if merged_at else None,
         )
         db.add(decision)
+        await db.flush()
+
+        await event_bus.publish_event(
+            db,
+            type="decision.merged",
+            actor=details["author"],
+            projeto=full_name,
+            payload={
+                "decision_id": str(decision.id),
+                "pr_number": pr_number,
+                "pr_title": details["title"],
+                "impact_areas": decision.impact_areas,
+                "breaking_changes": decision.breaking_changes,
+                "changed_files": details.get("changed_files", []),
+                "qdrant_point_id": point_id,
+            },
+            source_table="architectural_decisions",
+            source_id=decision.id,
+            ts=decision.merged_at,
+        )
         await db.commit()
 
     return {"pr_number": pr_number, "point_id": point_id, "repo": full_name}
