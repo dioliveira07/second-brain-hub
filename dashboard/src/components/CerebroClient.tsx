@@ -504,6 +504,9 @@ function MCPConnCard({ c, sshIdentities }: { c: MCPConn; sshIdentities: SSHIdent
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+          {c.bootstrap_pending && (
+            <span style={{ background: `${C.purple}22`, border: `1px solid ${C.purple}44`, color: C.purple, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>bootstrap↓</span>
+          )}
           {c.skills_pending && (
             <span style={{ background: `${C.yellow}22`, border: `1px solid ${C.yellow}44`, color: C.yellow, borderRadius: 4, padding: "0px 6px", fontFamily: "var(--mono)", fontSize: "0.62rem" }}>skills↓</span>
           )}
