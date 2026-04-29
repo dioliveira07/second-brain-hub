@@ -1519,7 +1519,7 @@ if _sys.platform == "win32":
             "schtasks", "/create", "/tn", _task,
             "/tr", _tr,
             "/sc", "minute", "/mo", "5",
-            "/rl", "highest", "/f",
+            "/f",
         ], check=True, capture_output=True)
         print("OK  Task Scheduler configurado (a cada 5min)")
     except Exception as _e:
